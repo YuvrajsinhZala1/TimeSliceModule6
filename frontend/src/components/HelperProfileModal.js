@@ -1,6 +1,13 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useChat } from '../context/ChatContext';
+import api from '../utils/api';
 
 const HelperProfileModal = ({ helper, application, isOpen, onClose, onRespond }) => {
+  const navigate = useNavigate();
+  const { joinChat } = useChat();
+  const [startingChat, setStartingChat] = useState(false);
+
   if (!isOpen || !helper) return null;
 
   const formatDate = (dateString) => {
@@ -15,6 +22,31 @@ const HelperProfileModal = ({ helper, application, isOpen, onClose, onRespond })
     if (completedTasks >= 5) return 'Intermediate';
     if (monthsSince >= 3) return 'Beginner';
     return 'New Member';
+  };
+
+  const handleStartChat = async () => {
+    if (!application) return;
+    
+    setStartingChat(true);
+    try {
+      // Create or get existing discussion chat
+      const response = await api.post('/chat/create-discussion', {
+        taskId: application.taskId._id || application.taskId,
+        participantId: helper._id
+      });
+
+      // Close modal and navigate to chat
+      onClose();
+      
+      // Join the chat and navigate
+      joinChat(response.data);
+      navigate('/chat');
+    } catch (error) {
+      console.error('Error starting chat:', error);
+      alert('Failed to start chat. Please try again.');
+    } finally {
+      setStartingChat(false);
+    }
   };
 
   return (
@@ -176,6 +208,32 @@ const HelperProfileModal = ({ helper, application, isOpen, onClose, onRespond })
           </div>
         )}
 
+        {/* Chat Option */}
+        {application && application.status === 'pending' && (
+          <div style={{ marginBottom: '2rem' }}>
+            <div style={{ 
+              backgroundColor: '#e3f2fd', 
+              padding: '1rem', 
+              borderRadius: '8px',
+              border: '1px solid #bbdefb'
+            }}>
+              <h4 style={{ margin: '0 0 0.5rem 0', color: '#1976d2' }}>💬 Want to discuss first?</h4>
+              <p style={{ margin: '0 0 1rem 0', fontSize: '0.9rem' }}>
+                Chat with {helper.username} before making a decision. Ask questions about their approach, 
+                timeline, or clarify requirements.
+              </p>
+              <button
+                onClick={handleStartChat}
+                disabled={startingChat}
+                className="btn btn-secondary"
+                style={{ width: '100%' }}
+              >
+                {startingChat ? '💬 Starting Chat...' : '💬 Start Discussion Chat'}
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Action Buttons */}
         {application && application.status === 'pending' && onRespond && (
           <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
@@ -207,6 +265,20 @@ const HelperProfileModal = ({ helper, application, isOpen, onClose, onRespond })
             >
               Application {application.status}
             </span>
+          </div>
+        )}
+
+        {/* No Application (just viewing profile) */}
+        {!application && (
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ 
+              backgroundColor: '#f8f9fa', 
+              padding: '1rem', 
+              borderRadius: '8px',
+              color: '#666'
+            }}>
+              Viewing {helper.username}'s profile
+            </div>
           </div>
         )}
       </div>

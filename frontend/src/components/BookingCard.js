@@ -2,13 +2,15 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { formatDuration } from '../utils/durationUtils';
-import ReviewForm from './ReviewForm';
+import FileUpload from './FileUpload';
+import DeliverableViewer from './DeliverableViewer';
 
 const BookingCard = ({ booking, onReviewSubmit, onStatusUpdate }) => {
   const { currentUser } = useAuth();
-  const [showReviewForm, setShowReviewForm] = useState(false);
-  const [reviewType, setReviewType] = useState('');
   const [workNote, setWorkNote] = useState('');
+  const [githubLinks, setGithubLinks] = useState([{ url: '', description: '' }]);
+  const [additionalLinks, setAdditionalLinks] = useState([{ url: '', description: '' }]);
+  const [uploadedFiles, setUploadedFiles] = useState([]);
   const [showWorkSubmission, setShowWorkSubmission] = useState(false);
 
   const formatDate = (dateString) => {
@@ -20,15 +22,53 @@ const BookingCard = ({ booking, onReviewSubmit, onStatusUpdate }) => {
 
   const handleStatusUpdate = async (newStatus) => {
     if (onStatusUpdate) {
-      await onStatusUpdate(booking._id, newStatus, workNote);
+      const deliverables = newStatus === 'work-submitted' ? {
+        files: uploadedFiles,
+        githubLinks: githubLinks.filter(link => link.url.trim()),
+        additionalLinks: additionalLinks.filter(link => link.url.trim())
+      } : undefined;
+
+      await onStatusUpdate(booking._id, newStatus, workNote, deliverables);
     }
     setShowWorkSubmission(false);
-    setWorkNote('');
+    resetSubmissionForm();
   };
 
-  const handleReviewClick = (type) => {
-    setReviewType(type);
-    setShowReviewForm(true);
+  const resetSubmissionForm = () => {
+    setWorkNote('');
+    setUploadedFiles([]);
+    setGithubLinks([{ url: '', description: '' }]);
+    setAdditionalLinks([{ url: '', description: '' }]);
+  };
+
+  const addGithubLink = () => {
+    setGithubLinks([...githubLinks, { url: '', description: '' }]);
+  };
+
+  const removeGithubLink = (index) => {
+    setGithubLinks(githubLinks.filter((_, i) => i !== index));
+  };
+
+  const updateGithubLink = (index, field, value) => {
+    const updated = githubLinks.map((link, i) => 
+      i === index ? { ...link, [field]: value } : link
+    );
+    setGithubLinks(updated);
+  };
+
+  const addAdditionalLink = () => {
+    setAdditionalLinks([...additionalLinks, { url: '', description: '' }]);
+  };
+
+  const removeAdditionalLink = (index) => {
+    setAdditionalLinks(additionalLinks.filter((_, i) => i !== index));
+  };
+
+  const updateAdditionalLink = (index, field, value) => {
+    const updated = additionalLinks.map((link, i) => 
+      i === index ? { ...link, [field]: value } : link
+    );
+    setAdditionalLinks(updated);
   };
 
   const getStatusColor = (status) => {
@@ -66,7 +106,12 @@ const BookingCard = ({ booking, onReviewSubmit, onStatusUpdate }) => {
       </div>
       
       <div className="mb-1">
-        <strong>Description:</strong> {booking.taskId.description}
+        <strong>Description:</strong> 
+        <p style={{ margin: '0.5rem 0', fontSize: '0.9rem' }}>
+          {booking.taskId.description.length > 100 
+            ? booking.taskId.description.substring(0, 100) + '...' 
+            : booking.taskId.description}
+        </p>
       </div>
       
       <div className="mb-1">
@@ -112,7 +157,7 @@ const BookingCard = ({ booking, onReviewSubmit, onStatusUpdate }) => {
         </div>
       )}
 
-      {/* Work Submission Note */}
+      {/* Work Submission Note Preview */}
       {booking.workSubmissionNote && (
         <div className="mb-1">
           <strong>Work Submission Note:</strong>
@@ -121,25 +166,41 @@ const BookingCard = ({ booking, onReviewSubmit, onStatusUpdate }) => {
             padding: '0.75rem', 
             borderRadius: '4px',
             marginTop: '0.25rem',
-            border: '1px solid #ffeaa7'
+            border: '1px solid #ffeaa7',
+            fontSize: '0.9rem'
           }}>
-            "{booking.workSubmissionNote}"
+            {booking.workSubmissionNote.length > 80 
+              ? `"${booking.workSubmissionNote.substring(0, 80)}..."` 
+              : `"${booking.workSubmissionNote}"`}
           </div>
         </div>
       )}
 
-      {/* Provider Acceptance Note */}
-      {booking.providerAcceptanceNote && (
+      {/* Deliverables Preview */}
+      {booking.deliverables && (
         <div className="mb-1">
-          <strong>Completion Note:</strong>
+          <strong>Deliverables:</strong>
           <div style={{ 
-            background: '#d4edda', 
-            padding: '0.75rem', 
-            borderRadius: '4px',
-            marginTop: '0.25rem',
-            border: '1px solid #c3e6cb'
+            display: 'flex', 
+            gap: '0.5rem', 
+            marginTop: '0.5rem',
+            flexWrap: 'wrap' 
           }}>
-            "{booking.providerAcceptanceNote}"
+            {booking.deliverables.files?.length > 0 && (
+              <span className="badge" style={{ backgroundColor: '#28a745' }}>
+                📎 {booking.deliverables.files.length} file{booking.deliverables.files.length !== 1 ? 's' : ''}
+              </span>
+            )}
+            {booking.deliverables.githubLinks?.length > 0 && (
+              <span className="badge" style={{ backgroundColor: '#6f42c1' }}>
+                🐙 {booking.deliverables.githubLinks.length} GitHub link{booking.deliverables.githubLinks.length !== 1 ? 's' : ''}
+              </span>
+            )}
+            {booking.deliverables.additionalLinks?.length > 0 && (
+              <span className="badge" style={{ backgroundColor: '#17a2b8' }}>
+                🔗 {booking.deliverables.additionalLinks.length} additional link{booking.deliverables.additionalLinks.length !== 1 ? 's' : ''}
+              </span>
+            )}
           </div>
         </div>
       )}
@@ -162,7 +223,7 @@ const BookingCard = ({ booking, onReviewSubmit, onStatusUpdate }) => {
         </div>
       )}
 
-      {/* Work Submission for Helper */}
+      {/* Enhanced Work Submission for Helper */}
       {isHelper && booking.status === 'in-progress' && (
         <div className="mb-1">
           {!showWorkSubmission ? (
@@ -175,32 +236,141 @@ const BookingCard = ({ booking, onReviewSubmit, onStatusUpdate }) => {
             </button>
           ) : (
             <div style={{ 
-              padding: '1rem', 
+              padding: '1.5rem', 
               border: '2px solid #28a745', 
               borderRadius: '8px',
               backgroundColor: '#f8fff8'
             }}>
-              <h4>Submit Your Work</h4>
+              <h4>📤 Submit Your Work</h4>
+              
+              {/* Work Summary */}
               <div className="form-group">
                 <label>Work Summary & Notes:</label>
                 <textarea
                   value={workNote}
                   onChange={(e) => setWorkNote(e.target.value)}
-                  placeholder="Describe what you've completed, any deliverables, next steps, or notes for the task provider..."
+                  placeholder="Describe what you've completed, key features, challenges overcome, next steps, or notes for the task provider..."
                   rows="3"
                   required
                 />
               </div>
+
+              {/* File Upload */}
+              <FileUpload 
+                onFilesUploaded={setUploadedFiles}
+                maxFiles={10}
+              />
+
+              {/* GitHub Links */}
+              <div className="form-group">
+                <label>GitHub Repository Links (optional):</label>
+                {githubLinks.map((link, index) => (
+                  <div key={index} style={{ 
+                    display: 'flex', 
+                    gap: '0.5rem', 
+                    marginBottom: '0.5rem',
+                    alignItems: 'flex-end'
+                  }}>
+                    <div style={{ flex: 1 }}>
+                      <input
+                        type="url"
+                        value={link.url}
+                        onChange={(e) => updateGithubLink(index, 'url', e.target.value)}
+                        placeholder="https://github.com/username/repository"
+                        style={{ marginBottom: '0.25rem' }}
+                      />
+                      <input
+                        type="text"
+                        value={link.description}
+                        onChange={(e) => updateGithubLink(index, 'description', e.target.value)}
+                        placeholder="Brief description (optional)"
+                      />
+                    </div>
+                    {githubLinks.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeGithubLink(index)}
+                        className="btn btn-danger"
+                        style={{ padding: '0.25rem 0.5rem' }}
+                      >
+                        🗑️
+                      </button>
+                    )}
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={addGithubLink}
+                  className="btn btn-secondary"
+                  style={{ padding: '0.25rem 0.75rem', fontSize: '0.9rem' }}
+                >
+                  ➕ Add GitHub Link
+                </button>
+              </div>
+
+              {/* Additional Links */}
+              <div className="form-group">
+                <label>Additional Links (optional):</label>
+                <small style={{ color: '#666', display: 'block', marginBottom: '0.5rem' }}>
+                  Live demos, documentation, design files, etc.
+                </small>
+                {additionalLinks.map((link, index) => (
+                  <div key={index} style={{ 
+                    display: 'flex', 
+                    gap: '0.5rem', 
+                    marginBottom: '0.5rem',
+                    alignItems: 'flex-end'
+                  }}>
+                    <div style={{ flex: 1 }}>
+                      <input
+                        type="url"
+                        value={link.url}
+                        onChange={(e) => updateAdditionalLink(index, 'url', e.target.value)}
+                        placeholder="https://example.com"
+                        style={{ marginBottom: '0.25rem' }}
+                      />
+                      <input
+                        type="text"
+                        value={link.description}
+                        onChange={(e) => updateAdditionalLink(index, 'description', e.target.value)}
+                        placeholder="Description (e.g., Live Demo, Documentation)"
+                      />
+                    </div>
+                    {additionalLinks.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeAdditionalLink(index)}
+                        className="btn btn-danger"
+                        style={{ padding: '0.25rem 0.5rem' }}
+                      >
+                        🗑️
+                      </button>
+                    )}
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={addAdditionalLink}
+                  className="btn btn-secondary"
+                  style={{ padding: '0.25rem 0.75rem', fontSize: '0.9rem' }}
+                >
+                  ➕ Add Link
+                </button>
+              </div>
+
               <div className="flex gap-1">
                 <button 
                   onClick={() => handleStatusUpdate('work-submitted')}
                   className="btn btn-success"
                   disabled={!workNote.trim()}
                 >
-                  Submit Work
+                  📤 Submit Work
                 </button>
                 <button 
-                  onClick={() => setShowWorkSubmission(false)}
+                  onClick={() => {
+                    setShowWorkSubmission(false);
+                    resetSubmissionForm();
+                  }}
                   className="btn btn-secondary"
                 >
                   Cancel
@@ -223,7 +393,7 @@ const BookingCard = ({ booking, onReviewSubmit, onStatusUpdate }) => {
         </div>
       )}
 
-      {/* Work Submitted Status */}
+      {/* Work Submitted Status with Deliverables Preview */}
       {booking.status === 'work-submitted' && (
         <div className="mb-1" style={{ 
           backgroundColor: '#fff3cd', 
@@ -232,12 +402,22 @@ const BookingCard = ({ booking, onReviewSubmit, onStatusUpdate }) => {
           border: '1px solid #ffeaa7'
         }}>
           <strong>📤 Work Submitted by Helper</strong>
-          <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.9rem' }}>
+          <p style={{ margin: '0.5rem 0', fontSize: '0.9rem' }}>
             {isTaskProvider 
-              ? 'Review the work and mark as completed in "My Tasks" when satisfied.'
+              ? 'Review the work and deliverables. Mark as completed in "My Tasks" when satisfied.'
               : 'Work submitted! Waiting for task provider to review and mark as completed.'
             }
           </p>
+          
+          {/* Quick Deliverables Summary */}
+          {booking.deliverables && (
+            <div style={{ marginTop: '0.5rem' }}>
+              <DeliverableViewer 
+                deliverables={booking.deliverables} 
+                canDownload={isTaskProvider}
+              />
+            </div>
+          )}
         </div>
       )}
 
@@ -247,83 +427,83 @@ const BookingCard = ({ booking, onReviewSubmit, onStatusUpdate }) => {
           <Link 
             to="/chat" 
             className="btn btn-secondary"
+            style={{ width: '100%' }}
           >
             💬 Open Chat
           </Link>
         </div>
       )}
       
-      {/* Reviews Section */}
+      {/* Reviews Summary */}
       {booking.status === 'completed' && (
         <div className="mt-1">
-          {booking.helperReview.review && (
-            <div className="mb-1">
-              <strong>Helper's Review of Task Provider:</strong>
-              <div style={{ 
-                background: '#f8f9fa', 
-                padding: '0.75rem', 
-                borderRadius: '4px',
-                marginTop: '0.25rem',
-                border: '1px solid #e1e5e9'
-              }}>
-                "{booking.helperReview.review}"
-                <span className="rating ml-1">
-                  ★ {booking.helperReview.rating}/5
-                </span>
-              </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '1rem' }}>
+            {/* Helper Review Summary */}
+            <div style={{ 
+              padding: '0.75rem', 
+              backgroundColor: '#f8f9fa', 
+              borderRadius: '4px',
+              border: '1px solid #e1e5e9',
+              textAlign: 'center'
+            }}>
+              <strong>Helper's Review</strong>
+              {booking.helperReview.rating ? (
+                <div>
+                  <span className="rating">★ {booking.helperReview.rating}/5</span>
+                  <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.8rem' }}>
+                    {booking.helperReview.review.length > 30 
+                      ? `"${booking.helperReview.review.substring(0, 30)}..."` 
+                      : `"${booking.helperReview.review}"`}
+                  </p>
+                </div>
+              ) : (
+                <div style={{ color: '#666', fontSize: '0.9rem' }}>Not reviewed</div>
+              )}
             </div>
-          )}
-          
-          {booking.taskProviderReview.review && (
-            <div className="mb-1">
-              <strong>Task Provider's Review of Helper:</strong>
-              <div style={{ 
-                background: '#f8f9fa', 
-                padding: '0.75rem', 
-                borderRadius: '4px',
-                marginTop: '0.25rem',
-                border: '1px solid #e1e5e9'
-              }}>
-                "{booking.taskProviderReview.review}"
-                <span className="rating ml-1">
-                  ★ {booking.taskProviderReview.rating}/5
-                </span>
-              </div>
+            
+            {/* Task Provider Review Summary */}
+            <div style={{ 
+              padding: '0.75rem', 
+              backgroundColor: '#f8f9fa', 
+              borderRadius: '4px',
+              border: '1px solid #e1e5e9',
+              textAlign: 'center'
+            }}>
+              <strong>Provider's Review</strong>
+              {booking.taskProviderReview.rating ? (
+                <div>
+                  <span className="rating">★ {booking.taskProviderReview.rating}/5</span>
+                  <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.8rem' }}>
+                    {booking.taskProviderReview.review.length > 30 
+                      ? `"${booking.taskProviderReview.review.substring(0, 30)}..."` 
+                      : `"${booking.taskProviderReview.review}"`}
+                  </p>
+                </div>
+              ) : (
+                <div style={{ color: '#666', fontSize: '0.9rem' }}>Not reviewed</div>
+              )}
             </div>
-          )}
-
-          {/* Review Buttons */}
-          <div className="flex gap-1">
-            {isHelper && !booking.helperReview.rating && (
-              <button 
-                onClick={() => handleReviewClick('helper')}
-                className="btn btn-success"
-              >
-                ⭐ Review Task Provider
-              </button>
-            )}
-            {isTaskProvider && !booking.taskProviderReview.rating && (
-              <button 
-                onClick={() => handleReviewClick('taskProvider')}
-                className="btn btn-success"
-              >
-                ⭐ Review Helper
-              </button>
-            )}
           </div>
+
+          {/* Review Action Button */}
+          {((isHelper && !booking.helperReview.rating) || 
+            (isTaskProvider && !booking.taskProviderReview.rating)) && (
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ 
+                backgroundColor: '#e3f2fd', 
+                padding: '0.75rem', 
+                borderRadius: '4px',
+                marginBottom: '0.75rem',
+                border: '1px solid #bbdefb'
+              }}>
+                <strong>⭐ Review Needed</strong>
+                <p style={{ margin: 0, fontSize: '0.9rem' }}>
+                  Click "View Full Details" to leave your review
+                </p>
+              </div>
+            </div>
+          )}
         </div>
-      )}
-      
-      {showReviewForm && (
-        <ReviewForm 
-          bookingId={booking._id}
-          reviewType={reviewType}
-          onSubmit={(data) => {
-            onReviewSubmit(booking._id, data);
-            setShowReviewForm(false);
-          }}
-          onCancel={() => setShowReviewForm(false)}
-        />
       )}
     </div>
   );

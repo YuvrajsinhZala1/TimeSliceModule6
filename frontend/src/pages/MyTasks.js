@@ -1,19 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useNotification } from '../context/NotificationContext';
 import api from '../utils/api';
 import TaskCard from '../components/TaskCard';
 import ApplicantsList from '../components/ApplicantsList';
 import TaskCompletionModal from '../components/TaskCompletionModal';
+import DeliverableViewer from '../components/DeliverableViewer';
 
 const MyTasks = () => {
   const { currentUser } = useAuth();
+  const { fetchNotifications } = useNotification();
   const navigate = useNavigate();
   const [tasks, setTasks] = useState([]);
   const [selectedTask, setSelectedTask] = useState(null);
   const [showApplications, setShowApplications] = useState(false);
   const [showCompletionModal, setShowCompletionModal] = useState(false);
   const [taskToComplete, setTaskToComplete] = useState(null);
+  const [showDeliverables, setShowDeliverables] = useState(false);
+  const [selectedTaskDeliverables, setSelectedTaskDeliverables] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -75,6 +80,30 @@ const MyTasks = () => {
     setShowCompletionModal(true);
   };
 
+  const handleViewDeliverables = async (task) => {
+    try {
+      // Fetch booking details to get deliverables
+      const bookingResponse = await api.get('/bookings');
+      const taskBooking = bookingResponse.data.find(booking => 
+        booking.taskId._id === task._id && booking.status === 'work-submitted'
+      );
+      
+      if (taskBooking && taskBooking.deliverables) {
+        setSelectedTaskDeliverables({
+          task: task,
+          deliverables: taskBooking.deliverables,
+          workNote: taskBooking.workSubmissionNote
+        });
+        setShowDeliverables(true);
+      } else {
+        alert('No deliverables found for this task');
+      }
+    } catch (error) {
+      console.error('Error fetching deliverables:', error);
+      alert('Failed to load deliverables');
+    }
+  };
+
   const handleTaskCompletion = async (taskId, completionNote) => {
     try {
       setError('');
@@ -85,6 +114,9 @@ const MyTasks = () => {
       
       // Refresh tasks
       await fetchMyTasks();
+      
+      // Refresh notifications to update any completion-related notifications
+      await fetchNotifications();
       
       setTimeout(() => setSuccess(''), 5000);
     } catch (error) {
@@ -235,50 +267,69 @@ const MyTasks = () => {
                       showViewApplications={false}
                     />
                     
-                    {/* Task Provider Completion Controls */}
-                    {task.status === 'in-progress' && (
-                      <div style={{ 
-                        marginTop: '1rem', 
-                        padding: '1rem', 
-                        backgroundColor: '#f8f9fa', 
-                        borderRadius: '8px',
-                        border: '2px solid #28a745'
-                      }}>
-                        <h4 style={{ color: '#28a745', marginBottom: '0.5rem' }}>
-                          ✅ Task in Progress
-                        </h4>
-                        <p style={{ color: '#666', marginBottom: '1rem' }}>
-                          Working with: <strong>{task.selectedHelper?.username}</strong>
-                        </p>
-                        
-                        {task.completedByHelper && (
-                          <div style={{ 
-                            backgroundColor: '#d4edda', 
-                            padding: '0.75rem', 
-                            borderRadius: '4px',
-                            marginBottom: '1rem',
-                            border: '1px solid #c3e6cb'
-                          }}>
+                    {/* Task Provider Controls */}
+                    <div style={{ 
+                      marginTop: '1rem', 
+                      padding: '1rem', 
+                      backgroundColor: '#f8f9fa', 
+                      borderRadius: '8px',
+                      border: '2px solid #28a745'
+                    }}>
+                      <h4 style={{ color: '#28a745', marginBottom: '0.5rem' }}>
+                        {task.status === 'in-progress' ? '🚀 Task in Progress' : '📋 Task Assigned'}
+                      </h4>
+                      <p style={{ color: '#666', marginBottom: '1rem' }}>
+                        Working with: <strong>{task.selectedHelper?.username}</strong>
+                      </p>
+                      
+                      {/* Work Submitted Status */}
+                      {task.completedByHelper && (
+                        <div style={{ 
+                          backgroundColor: '#d4edda', 
+                          padding: '1rem', 
+                          borderRadius: '4px',
+                          marginBottom: '1rem',
+                          border: '1px solid #c3e6cb'
+                        }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
                             <strong>🎉 Helper has completed their work!</strong>
-                            <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.9rem' }}>
-                              Review the work and mark as completed when satisfied.
-                            </p>
                           </div>
-                        )}
-                        
-                        <button
-                          onClick={() => handleCompleteTask(task)}
-                          className="btn btn-success"
-                          style={{ width: '100%' }}
-                        >
-                          Mark Task as Completed
-                        </button>
-                        
-                        <small style={{ display: 'block', marginTop: '0.5rem', color: '#666' }}>
-                          This will transfer credits to the helper and complete the task
-                        </small>
-                      </div>
-                    )}
+                          <p style={{ margin: '0.5rem 0', fontSize: '0.9rem' }}>
+                            Review the work and deliverables, then mark as completed when satisfied.
+                          </p>
+                          
+                          {/* View Deliverables Button */}
+                          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
+                            <button
+                              onClick={() => handleViewDeliverables(task)}
+                              className="btn btn-secondary"
+                              style={{ flex: 1 }}
+                            >
+                              📦 View Submitted Work & Files
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      
+                      <button
+                        onClick={() => handleCompleteTask(task)}
+                        className="btn btn-success"
+                        style={{ width: '100%' }}
+                        disabled={!task.completedByHelper}
+                      >
+                        {task.completedByHelper 
+                          ? '✅ Mark Task as Completed' 
+                          : '⏳ Waiting for Helper to Submit Work'
+                        }
+                      </button>
+                      
+                      <small style={{ display: 'block', marginTop: '0.5rem', color: '#666', textAlign: 'center' }}>
+                        {task.completedByHelper 
+                          ? 'This will transfer credits to the helper and complete the task'
+                          : 'Helper needs to submit their work before you can mark as completed'
+                        }
+                      </small>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -312,6 +363,15 @@ const MyTasks = () => {
                         </p>
                       </div>
                     )}
+                    
+                    {/* View Final Deliverables */}
+                    <button
+                      onClick={() => handleViewDeliverables(task)}
+                      className="btn btn-secondary"
+                      style={{ width: '100%', marginTop: '1rem' }}
+                    >
+                      📁 View Final Deliverables
+                    </button>
                   </div>
                 ))}
               </div>
@@ -330,6 +390,82 @@ const MyTasks = () => {
         }}
         onComplete={handleTaskCompletion}
       />
+
+      {/* Deliverables Modal */}
+      {showDeliverables && selectedTaskDeliverables && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1000
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            borderRadius: '12px',
+            padding: '2rem',
+            maxWidth: '800px',
+            width: '90%',
+            maxHeight: '80vh',
+            overflow: 'auto',
+            position: 'relative'
+          }}>
+            <button
+              onClick={() => setShowDeliverables(false)}
+              style={{
+                position: 'absolute',
+                top: '1rem',
+                right: '1rem',
+                background: 'none',
+                border: 'none',
+                fontSize: '1.5rem',
+                cursor: 'pointer',
+                color: '#666'
+              }}
+            >
+              ✕
+            </button>
+
+            <h2 style={{ marginBottom: '1rem' }}>
+              📦 Deliverables for: {selectedTaskDeliverables.task.title}
+            </h2>
+
+            {selectedTaskDeliverables.workNote && (
+              <div style={{ 
+                backgroundColor: '#fff3cd', 
+                padding: '1rem', 
+                borderRadius: '8px',
+                marginBottom: '2rem',
+                border: '1px solid #ffeaa7'
+              }}>
+                <h4>📝 Helper's Work Notes:</h4>
+                <p style={{ margin: 0, fontStyle: 'italic' }}>
+                  "{selectedTaskDeliverables.workNote}"
+                </p>
+              </div>
+            )}
+
+            <DeliverableViewer 
+              deliverables={selectedTaskDeliverables.deliverables}
+              canDownload={true}
+            />
+
+            <div style={{ textAlign: 'center', marginTop: '2rem' }}>
+              <button
+                onClick={() => setShowDeliverables(false)}
+                className="btn"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

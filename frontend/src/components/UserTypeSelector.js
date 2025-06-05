@@ -2,48 +2,51 @@ import React from 'react';
 
 const UserTypeSelector = ({ selectedType, onChange }) => {
   return (
-    <div className="form-group">
+    <div className="auth-form-group">
       <label>Primary Role (you can do both, but pick your main focus):</label>
-      <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem' }}>
-        <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+      
+      <div className="role-selector">
+        <label className="role-option">
           <input
             type="radio"
             name="primaryRole"
             value="helper"
             checked={selectedType === 'helper'}
             onChange={(e) => onChange(e.target.value)}
-            style={{ marginRight: '0.5rem' }}
           />
-          <div>
-            <strong>🤝 Helper</strong>
-            <br />
-            <small style={{ color: '#666' }}>
+          <div className="role-card">
+            <div className="role-icon">🤝</div>
+            <div className="role-title">Helper</div>
+            <div className="role-description">
               Primarily help others with tasks and earn credits
-            </small>
+            </div>
           </div>
         </label>
         
-        <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+        <label className="role-option">
           <input
             type="radio"
             name="primaryRole"
             value="taskProvider"
             checked={selectedType === 'taskProvider'}
             onChange={(e) => onChange(e.target.value)}
-            style={{ marginRight: '0.5rem' }}
           />
-          <div>
-            <strong>📋 Task Provider</strong>
-            <br />
-            <small style={{ color: '#666' }}>
+          <div className="role-card">
+            <div className="role-icon">📋</div>
+            <div className="role-title">Task Provider</div>
+            <div className="role-description">
               Primarily post tasks and get help using credits
-            </small>
+            </div>
           </div>
         </label>
       </div>
-      <small style={{ color: '#666', marginTop: '0.5rem', display: 'block' }}>
-        💡 Don't worry! You can both post tasks AND help others regardless of your primary role.
-      </small>
+      
+      <div className="role-note">
+        <span className="role-note-icon">💡</span>
+        <span className="role-note-text">
+          Don't worry! You can both post tasks AND help others regardless of your primary role.
+        </span>
+      </div>
     </div>
   );
 };

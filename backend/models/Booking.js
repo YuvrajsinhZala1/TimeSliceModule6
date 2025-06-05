@@ -27,7 +27,7 @@ const BookingSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['confirmed', 'in-progress', 'completed', 'cancelled'],
+    enum: ['confirmed', 'in-progress', 'work-submitted', 'completed', 'cancelled'],
     default: 'confirmed'
   },
   helperReview: {
@@ -55,7 +55,52 @@ const BookingSchema = new mongoose.Schema({
   providerAcceptanceNote: {
     type: String,
     default: ''
-  }
+  },
+  // New deliverables field
+  deliverables: {
+    files: [{
+      originalName: String,
+      filename: String,
+      path: String,
+      mimetype: String,
+      size: Number,
+      uploadedAt: {
+        type: Date,
+        default: Date.now
+      }
+    }],
+    githubLinks: [{
+      url: String,
+      description: String,
+      addedAt: {
+        type: Date,
+        default: Date.now
+      }
+    }],
+    additionalLinks: [{
+      url: String,
+      description: String,
+      addedAt: {
+        type: Date,
+        default: Date.now
+      }
+    }]
+  },
+  // Track who has reviewed
+  reviewedBy: [{
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    reviewType: {
+      type: String,
+      enum: ['helper', 'taskProvider']
+    },
+    reviewedAt: {
+      type: Date,
+      default: Date.now
+    }
+  }]
 }, {
   timestamps: true
 });

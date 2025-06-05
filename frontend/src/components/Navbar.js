@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useChat } from '../context/ChatContext';
@@ -6,9 +6,31 @@ import RoleSwitcher from './RoleSwitcher';
 
 const Navbar = () => {
   const { currentUser, logout } = useAuth();
-  const { unreadCount } = useChat();
+  const { unreadCount, fetchUnreadCount } = useChat();
   const navigate = useNavigate();
   const location = useLocation();
+
+  // Refresh unread count when navigating to chat page
+  useEffect(() => {
+    if (currentUser && location.pathname === '/chat') {
+      // Small delay to allow chat marking as read
+      const timer = setTimeout(() => {
+        fetchUnreadCount();
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [location.pathname, currentUser, fetchUnreadCount]);
+
+  // Periodically refresh unread count
+  useEffect(() => {
+    if (currentUser) {
+      const interval = setInterval(() => {
+        fetchUnreadCount();
+      }, 30000); // Refresh every 30 seconds
+
+      return () => clearInterval(interval);
+    }
+  }, [currentUser, fetchUnreadCount]);
 
   // Don't show navbar on homepage for non-logged in users
   const isHomePage = location.pathname === '/';
@@ -43,22 +65,25 @@ const Navbar = () => {
             <li><Link to="/my-bookings">My Bookings</Link></li>
             <li><Link to="/task-applications">Applications</Link></li>
             
-            {/* Chat with unread indicator */}
+            {/* Chat with enhanced unread indicator */}
             <li>
               <Link to="/chat" style={{ position: 'relative' }}>
                 Chat
                 {unreadCount > 0 && (
                   <span style={{
                     position: 'absolute',
-                    top: '-5px',
-                    right: '-5px',
-                    background: '#dc3545',
+                    top: '-8px',
+                    right: '-8px',
+                    background: 'linear-gradient(45deg, #dc3545, #ff6b6b)',
                     color: 'white',
                     borderRadius: '50%',
                     padding: '0.2rem 0.4rem',
                     fontSize: '0.7rem',
                     minWidth: '18px',
-                    textAlign: 'center'
+                    textAlign: 'center',
+                    fontWeight: 'bold',
+                    boxShadow: '0 2px 4px rgba(220, 53, 69, 0.3)',
+                    animation: unreadCount > 0 ? 'notification-pulse 2s infinite' : 'none'
                   }}>
                     {unreadCount > 99 ? '99+' : unreadCount}
                   </span>
@@ -103,6 +128,24 @@ const Navbar = () => {
           </ul>
         )}
       </div>
+
+      {/* CSS for notification animation */}
+      <style jsx>{`
+        @keyframes notification-pulse {
+          0% {
+            transform: scale(1);
+            opacity: 1;
+          }
+          50% {
+            transform: scale(1.1);
+            opacity: 0.8;
+          }
+          100% {
+            transform: scale(1);
+            opacity: 1;
+          }
+        }
+      `}</style>
     </nav>
   );
 };

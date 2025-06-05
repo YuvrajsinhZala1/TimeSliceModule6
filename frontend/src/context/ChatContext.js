@@ -1,4 +1,4 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
+import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
 import api from '../utils/api';
 import socketService from '../utils/socket';
 import { useAuth } from './AuthContext';
@@ -16,6 +16,24 @@ export const ChatProvider = ({ children }) => {
   const [messages, setMessages] = useState({});
   const [unreadCount, setUnreadCount] = useState(0);
 
+  const fetchUnreadCount = useCallback(async () => {
+    try {
+      const response = await api.get('/chat/unread-count');
+      setUnreadCount(response.data.unreadCount);
+    } catch (error) {
+      console.error('Error fetching unread count:', error);
+    }
+  }, []);
+
+  const fetchChats = useCallback(async () => {
+    try {
+      const response = await api.get('/chat');
+      setChats(response.data);
+    } catch (error) {
+      console.error('Error fetching chats:', error);
+    }
+  }, []);
+
   useEffect(() => {
     if (currentUser) {
       fetchChats();
@@ -26,25 +44,7 @@ export const ChatProvider = ({ children }) => {
     return () => {
       socketService.offReceiveMessage();
     };
-  }, [currentUser]);
-
-  const fetchChats = async () => {
-    try {
-      const response = await api.get('/chat');
-      setChats(response.data);
-    } catch (error) {
-      console.error('Error fetching chats:', error);
-    }
-  };
-
-  const fetchUnreadCount = async () => {
-    try {
-      const response = await api.get('/chat/unread-count');
-      setUnreadCount(response.data.unreadCount);
-    } catch (error) {
-      console.error('Error fetching unread count:', error);
-    }
-  };
+  }, [currentUser, fetchChats, fetchUnreadCount]);
 
   const fetchMessages = async (chatId) => {
     try {
@@ -53,6 +53,10 @@ export const ChatProvider = ({ children }) => {
         ...prev,
         [chatId]: response.data
       }));
+      
+      // Refresh unread count after fetching messages
+      await fetchUnreadCount();
+      
       return response.data;
     } catch (error) {
       console.error('Error fetching messages:', error);
@@ -90,6 +94,16 @@ export const ChatProvider = ({ children }) => {
     }
   };
 
+  const markChatAsRead = async (chatId) => {
+    try {
+      await api.put(`/chat/${chatId}/mark-read`);
+      // Refresh unread count
+      await fetchUnreadCount();
+    } catch (error) {
+      console.error('Error marking chat as read:', error);
+    }
+  };
+
   const setupSocketListeners = () => {
     socketService.onReceiveMessage((data) => {
       const { chatId, message } = data;
@@ -100,7 +114,7 @@ export const ChatProvider = ({ children }) => {
         [chatId]: [...(prev[chatId] || []), message]
       }));
 
-      // Update unread count if not in active chat
+      // Update unread count only if not in active chat
       if (activeChat?._id !== chatId) {
         setUnreadCount(prev => prev + 1);
       }
@@ -114,17 +128,24 @@ export const ChatProvider = ({ children }) => {
     });
   };
 
-  const joinChat = (chat) => {
+  const joinChat = async (chat) => {
     setActiveChat(chat);
     socketService.joinChat(chat._id);
     
     // Fetch messages if not already loaded
     if (!messages[chat._id]) {
-      fetchMessages(chat._id);
+      await fetchMessages(chat._id);
+    } else {
+      // Mark chat as read when joining
+      await markChatAsRead(chat._id);
     }
   };
 
   const leaveChat = () => {
+    if (activeChat) {
+      // Mark current chat as read when leaving
+      markChatAsRead(activeChat._id);
+    }
     setActiveChat(null);
   };
 
@@ -138,7 +159,8 @@ export const ChatProvider = ({ children }) => {
     sendMessage,
     joinChat,
     leaveChat,
-    fetchUnreadCount
+    fetchUnreadCount,
+    markChatAsRead
   };
 
   return (

@@ -3,6 +3,7 @@ const Task = require('../models/Task');
 const Application = require('../models/Application');
 const User = require('../models/User');
 const Booking = require('../models/Booking');
+const { createNotification } = require('./notifications');
 const auth = require('../middleware/auth');
 
 const router = express.Router();
@@ -223,7 +224,8 @@ router.get('/:taskId', auth, async (req, res) => {
 router.put('/:taskId/complete', auth, async (req, res) => {
   try {
     const { completionNote } = req.body;
-    const task = await Task.findById(req.params.taskId);
+    const task = await Task.findById(req.params.taskId)
+      .populate('selectedHelper', 'username');
 
     if (!task) {
       return res.status(404).json({ message: 'Task not found' });
@@ -244,7 +246,9 @@ router.put('/:taskId/complete', auth, async (req, res) => {
     await task.save();
 
     // Update booking
-    const booking = await Booking.findOne({ taskId: task._id });
+    const booking = await Booking.findOne({ taskId: task._id })
+      .populate('helper', 'username');
+    
     if (booking) {
       booking.status = 'completed';
       booking.completedAt = new Date();
@@ -258,6 +262,34 @@ router.put('/:taskId/complete', auth, async (req, res) => {
       await User.findByIdAndUpdate(booking.helper, { 
         $inc: { credits: booking.agreedCredits, completedTasks: 1 } 
       });
+
+      // Create notification for helper about task completion
+      await createNotification({
+        userId: booking.helper._id,
+        type: 'task_completed',
+        title: 'Task Completed Successfully!',
+        message: `Your task "${task.title}" has been marked as completed by the task provider. You earned ${booking.agreedCredits} credits!`,
+        relatedId: booking._id,
+        relatedType: 'Booking',
+        actionRequired: true,
+        metadata: {
+          taskTitle: task.title,
+          creditsEarned: booking.agreedCredits,
+          providerName: req.user.username,
+          completionNote: completionNote || ''
+        }
+      });
+
+      // Emit real-time notification via socket
+      const io = req.app.get('io');
+      if (io) {
+        io.to(`user_${booking.helper._id}`).emit('receive_notification', {
+          type: 'task_completed',
+          title: 'Task Completed Successfully!',
+          message: `Your task "${task.title}" has been completed!`,
+          actionRequired: true
+        });
+      }
     }
 
     res.json({ message: 'Task marked as completed successfully', task });

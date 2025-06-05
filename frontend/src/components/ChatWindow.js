@@ -3,7 +3,7 @@ import { useChat } from '../context/ChatContext';
 import MessageList from './MessageList';
 
 const ChatWindow = ({ chat, onClose }) => {
-  const { messages, sendMessage, fetchMessages } = useChat();
+  const { messages, sendMessage, fetchMessages, markChatAsRead } = useChat();
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef(null);
@@ -18,6 +18,13 @@ const ChatWindow = ({ chat, onClose }) => {
   useEffect(() => {
     scrollToBottom();
   }, [messages[chat?._id]]);
+
+  // Mark chat as read when component mounts or chat changes
+  useEffect(() => {
+    if (chat) {
+      markChatAsRead(chat._id);
+    }
+  }, [chat, markChatAsRead]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -42,7 +49,10 @@ const ChatWindow = ({ chat, onClose }) => {
   if (!chat) {
     return (
       <div className="card text-center" style={{ height: '400px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <p>Select a chat to start messaging</p>
+        <div>
+          <h3>💬 Select a Chat</h3>
+          <p>Choose a conversation from the list to start messaging</p>
+        </div>
       </div>
     );
   }
@@ -57,7 +67,8 @@ const ChatWindow = ({ chat, onClose }) => {
         borderBottom: '1px solid #ddd',
         display: 'flex',
         justifyContent: 'space-between',
-        alignItems: 'center'
+        alignItems: 'center',
+        backgroundColor: '#f8f9fa'
       }}>
         <div>
           <h4 style={{ margin: 0 }}>
@@ -68,9 +79,15 @@ const ChatWindow = ({ chat, onClose }) => {
             {otherUser?.isOnline && <span style={{ color: '#28a745' }}> • Online</span>}
           </small>
         </div>
-        <button onClick={onClose} className="btn btn-secondary" style={{ padding: '0.25rem 0.5rem' }}>
-          ✕
-        </button>
+        {onClose && (
+          <button 
+            onClick={onClose} 
+            className="btn btn-secondary" 
+            style={{ padding: '0.25rem 0.5rem' }}
+          >
+            ✕
+          </button>
+        )}
       </div>
 
       {/* Messages Area */}
@@ -95,7 +112,8 @@ const ChatWindow = ({ chat, onClose }) => {
         padding: '1rem', 
         borderTop: '1px solid #ddd',
         display: 'flex',
-        gap: '0.5rem'
+        gap: '0.5rem',
+        backgroundColor: '#f8f9fa'
       }}>
         <input
           type="text"
@@ -104,6 +122,7 @@ const ChatWindow = ({ chat, onClose }) => {
           placeholder="Type your message..."
           style={{ flex: 1 }}
           disabled={loading}
+          autoFocus
         />
         <button 
           type="submit" 
