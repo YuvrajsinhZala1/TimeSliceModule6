@@ -12,7 +12,7 @@ const retryDelay = 5000; // 5 seconds
  */
 const connectDB = async () => {
   try {
-    // MongoDB connection options optimized for production
+    // MongoDB connection options optimized for Mongoose 7.x
     const options = {
       // Connection pool settings
       maxPoolSize: 10, // Maximum number of connections in the pool
@@ -24,9 +24,9 @@ const connectDB = async () => {
       socketTimeoutMS: 45000, // How long a send or receive on a socket can take before timing out
       connectTimeoutMS: 10000, // How long to wait for a connection to be established
       
-      // Buffering settings
-      bufferMaxEntries: 0, // Disable mongoose buffering
-      bufferCommands: false, // Disable mongoose buffering
+      // Removed deprecated buffering settings - these are handled automatically in Mongoose 7.x
+      // bufferMaxEntries: 0, // DEPRECATED - removed
+      // bufferCommands: false, // DEPRECATED - removed
       
       // Replica set settings
       readPreference: 'primary', // Read from primary by default
@@ -170,7 +170,7 @@ const setupConnectionListeners = () => {
 const setupDatabaseMonitoring = () => {
   const db = mongoose.connection;
 
-  // Monitor slow queries
+  // Monitor slow queries (this might not work in newer versions, but keeping for compatibility)
   db.on('slow', (event) => {
     logger.warn('Slow database query detected', {
       collection: event.collection,

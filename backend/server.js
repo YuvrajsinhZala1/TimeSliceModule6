@@ -28,7 +28,7 @@ const applicationRoutes = require('./routes/applications');
 const bookingRoutes = require('./routes/bookings');
 const chatRoutes = require('./routes/chat');
 const userRoutes = require('./routes/users');
-const notificationRoutes = require('./routes/notifications');
+const { router: notificationRoutes } = require('./routes/notifications');
 const uploadRoutes = require('./routes/upload');
 
 // NEW: Import enhanced dashboard routes (comment out if not created yet)

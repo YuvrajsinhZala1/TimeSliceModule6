@@ -375,7 +375,7 @@ const SuccessMetrics = ({ data, timeRange }) => {
             <YAxis domain={config.max ? [0, config.max] : ['auto', 'auto']} />
             <Tooltip 
               formatter={(value) => [
-                `${metricKey === 'rating' ? value.toFixed(1) : Math.round(value)}${config.unit}`,
+                `${selectedMetric === 'rating' ? value.toFixed(1) : Math.round(value)}${config.unit}`,
                 config.name
               ]}
             />
