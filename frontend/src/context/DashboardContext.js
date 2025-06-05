@@ -1,11 +1,11 @@
-import React, { createContext, useState, useContext, useEffect, useCallback } from 'react';
-import api from '../utils/api';
-import { useAuth } from './AuthContext';
-import { useLogger } from '../hooks/useLogger';
+// File: src/context/DashboardContext.js
+import React, { createContext, useState, useEffect, useContext } from 'react';
+import { AuthContext } from './AuthContext';
 
 const DashboardContext = createContext();
 
-export const useDashboardContext = () => {
+// Custom hook to use dashboard context
+const useDashboardContext = () => {
   const context = useContext(DashboardContext);
   if (!context) {
     throw new Error('useDashboardContext must be used within a DashboardProvider');
@@ -13,318 +13,386 @@ export const useDashboardContext = () => {
   return context;
 };
 
-export const DashboardProvider = ({ children }) => {
-  const { currentUser } = useAuth();
-  const logger = useLogger();
-
-  // Dashboard state
+const DashboardProvider = ({ children }) => {
   const [dashboardData, setDashboardData] = useState(null);
-  const [analyticsData, setAnalyticsData] = useState(null);
-  const [recentActivity, setRecentActivity] = useState([]);
-  const [performanceMetrics, setPerformanceMetrics] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [lastUpdated, setLastUpdated] = useState(null);
 
-  // Real-time updates
-  const [realTimeEnabled, setRealTimeEnabled] = useState(true);
-  const [updateQueue, setUpdateQueue] = useState([]);
+  const { user, socket } = useContext(AuthContext);
 
-  // Cache management
-  const [cache, setCache] = useState(new Map());
-  const [cacheExpiry, setCacheExpiry] = useState(5 * 60 * 1000); // 5 minutes
+  // Generate mock dashboard data
+  const generateMockDashboardData = (userData) => {
+    if (!userData) return null;
+    
+    const isHelper = userData.userType === 'helper';
+    const now = new Date();
 
-  // Fetch dashboard data
-  const fetchDashboardData = useCallback(async (timeRange = '7d', forceRefresh = false) => {
-    try {
+    // Generate earnings data for last 6 months
+    const monthlyEarnings = Array.from({ length: 6 }, (_, i) => {
+      const date = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
+      const baseEarnings = isHelper ? 400 : 200;
+      const variance = Math.random() * 0.4 + 0.8; // 80-120% of base
+      
+      return {
+        month: date.toISOString().slice(0, 7),
+        earnings: Math.round(baseEarnings * variance),
+        tasks: Math.floor(Math.random() * 10) + (isHelper ? 8 : 4),
+        date: date.toISOString()
+      };
+    });
+
+    // Generate daily earnings for last 30 days
+    const dailyEarnings = Array.from({ length: 30 }, (_, i) => {
+      const date = new Date(now);
+      date.setDate(date.getDate() - (29 - i));
+      
+      const baseDaily = isHelper ? 25 : 12;
+      const dayOfWeek = date.getDay();
+      const weekendMultiplier = (dayOfWeek === 0 || dayOfWeek === 6) ? 0.7 : 1;
+      const variance = Math.random() * 0.6 + 0.7;
+      
+      return {
+        date: date.toISOString().slice(0, 10),
+        earnings: Math.round(baseDaily * weekendMultiplier * variance),
+        tasks: Math.floor(Math.random() * 3),
+        hours: Math.round((Math.random() * 6 + 2) * 10) / 10
+      };
+    });
+
+    // Performance data
+    const performanceData = Array.from({ length: 7 }, (_, i) => {
+      const date = new Date(now);
+      date.setDate(date.getDate() - (6 - i));
+      
+      return {
+        date: date.toISOString().slice(0, 10),
+        tasks: Math.floor(Math.random() * 4) + 1,
+        rating: Math.round((Math.random() * 1 + 4) * 10) / 10,
+        responseTime: Math.round((Math.random() * 3 + 1) * 10) / 10,
+        completionRate: Math.round((Math.random() * 15 + 85) * 10) / 10
+      };
+    });
+
+    // Activity data
+    const activities = [
+      {
+        id: 1,
+        type: 'task_completed',
+        title: 'Website Development Task Completed',
+        description: 'Successfully delivered a responsive React website',
+        timestamp: new Date(now.getTime() - 2 * 60 * 60 * 1000).toISOString(),
+        amount: 250,
+        user: 'John Smith',
+        icon: '✅'
+      },
+      {
+        id: 2,
+        type: 'payment_received',
+        title: 'Payment Received',
+        description: 'Received payment for mobile app UI design',
+        timestamp: new Date(now.getTime() - 4 * 60 * 60 * 1000).toISOString(),
+        amount: 180,
+        user: 'Sarah Johnson',
+        icon: '💰'
+      },
+      {
+        id: 3,
+        type: 'new_application',
+        title: 'New Task Application',
+        description: 'Received application for logo design project',
+        timestamp: new Date(now.getTime() - 6 * 60 * 60 * 1000).toISOString(),
+        user: 'Mike Chen',
+        icon: '📝'
+      },
+      {
+        id: 4,
+        type: 'review_received',
+        title: 'New 5-Star Review',
+        description: 'Received excellent review for web development work',
+        timestamp: new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString(),
+        rating: 5,
+        user: 'Emma Wilson',
+        icon: '⭐'
+      },
+      {
+        id: 5,
+        type: 'milestone_achieved',
+        title: 'Milestone Achieved',
+        description: 'Completed 50+ tasks with 4.8+ average rating',
+        timestamp: new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString(),
+        icon: '🎯'
+      }
+    ];
+
+    // Calculate totals
+    const totalEarnings = monthlyEarnings.reduce((sum, month) => sum + month.earnings, 0);
+    const totalTasks = monthlyEarnings.reduce((sum, month) => sum + month.tasks, 0);
+    const avgRating = Math.round((Math.random() * 0.8 + 4.2) * 10) / 10;
+    const currentMonth = monthlyEarnings[monthlyEarnings.length - 1];
+    const previousMonth = monthlyEarnings[monthlyEarnings.length - 2];
+    const earningsGrowth = previousMonth.earnings > 0 
+      ? Math.round(((currentMonth.earnings - previousMonth.earnings) / previousMonth.earnings) * 100)
+      : 0;
+
+    return {
+      stats: {
+        totalEarnings,
+        totalTasks,
+        avgRating,
+        activeBookings: Math.floor(Math.random() * 5) + 2,
+        creditsEarned: totalEarnings + Math.floor(Math.random() * 200),
+        creditsSpent: Math.floor(totalEarnings * 0.3),
+        completionRate: Math.round((Math.random() * 10 + 90) * 10) / 10,
+        responseTime: Math.round((Math.random() * 2 + 1) * 10) / 10,
+        customerSatisfaction: Math.round((Math.random() * 8 + 92) * 10) / 10,
+        earningsGrowth
+      },
+      earnings: {
+        monthly: monthlyEarnings,
+        daily: dailyEarnings,
+        thisMonth: currentMonth.earnings,
+        lastMonth: previousMonth.earnings,
+        growth: earningsGrowth
+      },
+      performance: {
+        data: performanceData,
+        avgResponseTime: Math.round((Math.random() * 2 + 2) * 10) / 10,
+        completionRate: Math.round((Math.random() * 10 + 90) * 10) / 10,
+        customerSatisfaction: Math.round((Math.random() * 8 + 92) * 10) / 10,
+        repeatCustomers: Math.round((Math.random() * 20 + 50) * 10) / 10
+      },
+      activities,
+      trends: {
+        topSkills: [
+          { skill: 'React Development', count: 15, growth: 25 },
+          { skill: 'UI/UX Design', count: 12, growth: 18 },
+          { skill: 'Node.js', count: 8, growth: 12 },
+          { skill: 'Mobile Development', count: 6, growth: 35 },
+          { skill: 'WordPress', count: 5, growth: -5 }
+        ],
+        peakHours: Array.from({ length: 24 }, (_, hour) => ({
+          hour,
+          activity: Math.round((Math.random() * 60 + 40) * 10) / 10,
+          label: `${hour.toString().padStart(2, '0')}:00`
+        })),
+        categoryDistribution: [
+          { category: 'Web Development', percentage: 40, count: 24 },
+          { category: 'Design', percentage: 30, count: 18 },
+          { category: 'Mobile Apps', percentage: 20, count: 12 },
+          { category: 'Content', percentage: 10, count: 6 }
+        ]
+      },
+      insights: {
+        recommendations: [
+          'Consider expanding to mobile development - 35% growth in demand',
+          'Your response time is excellent - highlight this in your profile',
+          'Peak activity hours are 2-6 PM - schedule availability accordingly',
+          'Client retention rate is above average - great job!',
+          'Portfolio updates can increase booking rate by 40%'
+        ].slice(0, 3),
+        marketTrends: [
+          'React development services show 25% growth this month',
+          'UI/UX design tasks are in high demand across all price ranges',
+          'Mobile-first projects are trending upward',
+          'Short-term tasks (< 4 hours) show higher completion rates'
+        ].slice(0, 3),
+        platformStats: {
+          totalUsers: 15420 + Math.floor(Math.random() * 100),
+          tasksPosted: 2840 + Math.floor(Math.random() * 50),
+          avgTaskValue: 125 + Math.floor(Math.random() * 20),
+          successRate: Math.round((Math.random() * 5 + 92) * 10) / 10
+        }
+      },
+      lastUpdated: now.toISOString(),
+      userType: userData.userType
+    };
+  };
+
+  // Initialize dashboard data when user changes
+  useEffect(() => {
+    if (user) {
       setLoading(true);
       setError(null);
-
-      logger.info('Fetching dashboard data', { 
-        timeRange, 
-        forceRefresh,
-        userId: currentUser?.id 
-      });
-
-      // Check cache first
-      const cacheKey = `dashboard_${timeRange}_${currentUser?.id}`;
-      const cachedData = cache.get(cacheKey);
       
-      if (!forceRefresh && cachedData && Date.now() - cachedData.timestamp < cacheExpiry) {
-        logger.debug('Using cached dashboard data', { cacheKey });
-        setDashboardData(cachedData.data);
-        setLastUpdated(new Date(cachedData.timestamp));
-        setLoading(false);
-        return cachedData.data;
-      }
+      // Simulate API delay
+      const timer = setTimeout(() => {
+        try {
+          const mockData = generateMockDashboardData(user);
+          setDashboardData(mockData);
+          setLastUpdated(new Date());
+        } catch (error) {
+          console.error('Failed to generate dashboard data:', error);
+          setError('Failed to load dashboard data');
+        } finally {
+          setLoading(false);
+        }
+      }, 800);
 
-      // Fetch fresh data
-      const [statsRes, analyticsRes, activityRes, performanceRes] = await Promise.all([
-        api.get(`/dashboard/stats?timeRange=${timeRange}`),
-        api.get(`/dashboard/analytics?timeRange=${timeRange}`),
-        api.get(`/dashboard/activity?timeRange=${timeRange}&limit=50`),
-        api.get(`/dashboard/performance?timeRange=${timeRange}`)
-      ]);
+      return () => clearTimeout(timer);
+    } else {
+      setDashboardData(null);
+      setLoading(false);
+    }
+  }, [user?.id]); // Only depend on user ID to prevent loops
 
-      const newDashboardData = {
-        stats: statsRes.data,
-        analytics: analyticsRes.data,
-        activity: activityRes.data,
-        performance: performanceRes.data,
-        timeRange,
-        timestamp: Date.now()
-      };
+  // Setup socket listeners - separate effect
+  useEffect(() => {
+    if (!socket || !user) return;
 
-      // Update cache
-      setCache(prev => new Map(prev.set(cacheKey, {
-        data: newDashboardData,
-        timestamp: Date.now()
-      })));
-
-      // Update state
-      setDashboardData(newDashboardData.stats);
-      setAnalyticsData(newDashboardData.analytics);
-      setRecentActivity(newDashboardData.activity);
-      setPerformanceMetrics(newDashboardData.performance);
+    // Listen for dashboard updates
+    const handleDashboardUpdate = (update) => {
+      setDashboardData(prev => ({
+        ...prev,
+        ...update
+      }));
       setLastUpdated(new Date());
+    };
 
-      logger.info('Dashboard data fetched successfully', { 
-        timeRange,
-        dataSize: JSON.stringify(newDashboardData).length,
-        cacheKey
-      });
+    // Listen for stats updates
+    const handleStatsUpdate = (stats) => {
+      setDashboardData(prev => ({
+        ...prev,
+        stats: {
+          ...prev?.stats,
+          ...stats
+        }
+      }));
+    };
 
-      return newDashboardData;
+    socket.on('dashboard_update', handleDashboardUpdate);
+    socket.on('stats_update', handleStatsUpdate);
 
-    } catch (error) {
-      const errorMessage = `Failed to fetch dashboard data: ${error.message}`;
-      setError(errorMessage);
+    return () => {
+      socket.off('dashboard_update', handleDashboardUpdate);
+      socket.off('stats_update', handleStatsUpdate);
+    };
+  }, [socket, user?.id]);
+
+  // Refresh dashboard data
+  const refreshDashboard = async () => {
+    if (!user) return;
+    
+    setLoading(true);
+    setError(null);
+    
+    try {
+      // Simulate API delay
+      await new Promise(resolve => setTimeout(resolve, 800));
       
-      logger.error('Dashboard data fetch failed', {
-        error: error.message,
-        stack: error.stack,
-        timeRange,
-        userId: currentUser?.id
-      });
-
-      throw error;
+      const mockData = generateMockDashboardData(user);
+      setDashboardData(mockData);
+      setLastUpdated(new Date());
+    } catch (error) {
+      console.error('Failed to refresh dashboard data:', error);
+      setError('Failed to refresh dashboard data');
     } finally {
       setLoading(false);
     }
-  }, [currentUser, cache, cacheExpiry, logger]);
+  };
 
-  // Real-time activity updates
-  const addActivityUpdate = useCallback((activity) => {
-    try {
-      logger.debug('Adding real-time activity update', { activity });
+  // Update specific stats
+  const updateStats = (newStats) => {
+    setDashboardData(prev => ({
+      ...prev,
+      stats: {
+        ...prev?.stats,
+        ...newStats
+      }
+    }));
+    setLastUpdated(new Date());
+  };
 
-      setRecentActivity(prev => {
-        // Avoid duplicates
-        const exists = prev.some(item => item.id === activity.id);
-        if (exists) return prev;
+  // Add new activity
+  const addActivity = (activity) => {
+    const newActivity = {
+      id: Date.now(),
+      ...activity,
+      timestamp: new Date().toISOString()
+    };
 
-        // Add to beginning and limit to 100 items
-        return [activity, ...prev].slice(0, 100);
-      });
+    setDashboardData(prev => ({
+      ...prev,
+      activities: [newActivity, ...(prev?.activities || []).slice(0, 9)] // Keep only last 10
+    }));
+  };
 
-      // Add to update queue for batch processing
-      setUpdateQueue(prev => [...prev, activity]);
-
-      logger.debug('Activity update added successfully');
-    } catch (error) {
-      logger.error('Failed to add activity update', {
-        error: error.message,
-        activity
-      });
-    }
-  }, [logger]);
-
-  // Process update queue
-  const processUpdateQueue = useCallback(async () => {
-    if (updateQueue.length === 0) return;
-
-    try {
-      logger.debug('Processing update queue', { queueSize: updateQueue.length });
-
-      // Process updates in batches
-      const batchSize = 10;
-      const batches = [];
+  // Update earnings
+  const updateEarnings = (amount, taskTitle) => {
+    setDashboardData(prev => {
+      if (!prev) return prev;
       
-      for (let i = 0; i < updateQueue.length; i += batchSize) {
-        batches.push(updateQueue.slice(i, i + batchSize));
-      }
+      const today = new Date().toISOString().slice(0, 10);
+      const updatedDaily = prev.earnings.daily.map(day => 
+        day.date === today 
+          ? { ...day, earnings: day.earnings + amount, tasks: day.tasks + 1 }
+          : day
+      );
 
-      for (const batch of batches) {
-        await api.post('/dashboard/activity/batch', { activities: batch });
-      }
+      const updatedStats = {
+        ...prev.stats,
+        totalEarnings: prev.stats.totalEarnings + amount,
+        totalTasks: prev.stats.totalTasks + 1,
+        creditsEarned: prev.stats.creditsEarned + amount
+      };
 
-      setUpdateQueue([]);
-      logger.info('Update queue processed successfully', { 
-        batchCount: batches.length,
-        totalUpdates: updateQueue.length 
-      });
-
-    } catch (error) {
-      logger.error('Failed to process update queue', {
-        error: error.message,
-        queueSize: updateQueue.length
-      });
-    }
-  }, [updateQueue, logger]);
-
-  // Clean old cache entries
-  const cleanCache = useCallback(() => {
-    try {
-      const now = Date.now();
-      const keysToDelete = [];
-
-      cache.forEach((value, key) => {
-        if (now - value.timestamp > cacheExpiry) {
-          keysToDelete.push(key);
+      return {
+        ...prev,
+        stats: updatedStats,
+        earnings: {
+          ...prev.earnings,
+          daily: updatedDaily,
+          thisMonth: prev.earnings.thisMonth + amount
         }
-      });
-
-      if (keysToDelete.length > 0) {
-        setCache(prev => {
-          const newCache = new Map(prev);
-          keysToDelete.forEach(key => newCache.delete(key));
-          return newCache;
-        });
-
-        logger.debug('Cache cleaned', { 
-          removedKeys: keysToDelete.length,
-          totalKeys: cache.size - keysToDelete.length
-        });
-      }
-    } catch (error) {
-      logger.error('Cache cleaning failed', { error: error.message });
-    }
-  }, [cache, cacheExpiry, logger]);
-
-  // Update single metric
-  const updateMetric = useCallback((metricPath, value) => {
-    try {
-      logger.debug('Updating single metric', { metricPath, value });
-
-      setDashboardData(prev => {
-        if (!prev) return prev;
-
-        const newData = { ...prev };
-        const pathArray = metricPath.split('.');
-        let current = newData;
-
-        // Navigate to the parent of the target property
-        for (let i = 0; i < pathArray.length - 1; i++) {
-          if (!current[pathArray[i]]) {
-            current[pathArray[i]] = {};
-          }
-          current = current[pathArray[i]];
-        }
-
-        // Update the target property
-        current[pathArray[pathArray.length - 1]] = value;
-        return newData;
-      });
-
-      logger.debug('Metric updated successfully', { metricPath, value });
-    } catch (error) {
-      logger.error('Failed to update metric', {
-        error: error.message,
-        metricPath,
-        value
-      });
-    }
-  }, [logger]);
-
-  // Export dashboard data
-  const exportDashboardData = useCallback(async (format = 'json', timeRange = '30d') => {
-    try {
-      logger.info('Exporting dashboard data', { format, timeRange });
-
-      const response = await api.get(`/dashboard/export`, {
-        params: { format, timeRange },
-        responseType: format === 'csv' ? 'blob' : 'json'
-      });
-
-      if (format === 'csv') {
-        // Handle CSV download
-        const blob = new Blob([response.data], { type: 'text/csv' });
-        const url = window.URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `dashboard-data-${timeRange}-${Date.now()}.csv`;
-        link.click();
-        window.URL.revokeObjectURL(url);
-      }
-
-      logger.info('Dashboard data exported successfully', { format, timeRange });
-      return response.data;
-
-    } catch (error) {
-      logger.error('Dashboard export failed', {
-        error: error.message,
-        format,
-        timeRange
-      });
-      throw error;
-    }
-  }, [logger]);
-
-  // Set up periodic tasks
-  useEffect(() => {
-    if (!currentUser) return;
-
-    // Set up cache cleaning interval
-    const cacheCleanInterval = setInterval(cleanCache, 60000); // Every minute
-
-    // Set up update queue processing
-    const queueProcessInterval = setInterval(processUpdateQueue, 10000); // Every 10 seconds
-
-    logger.info('Dashboard context initialized', {
-      userId: currentUser.id,
-      realTimeEnabled
+      };
     });
 
-    return () => {
-      clearInterval(cacheCleanInterval);
-      clearInterval(queueProcessInterval);
-      logger.info('Dashboard context cleanup completed');
-    };
-  }, [currentUser, cleanCache, processUpdateQueue, realTimeEnabled, logger]);
+    // Add activity
+    addActivity({
+      type: 'payment_received',
+      title: 'Payment Received',
+      description: `Received ${amount} credits for completing "${taskTitle}"`,
+      amount,
+      icon: '💰'
+    });
+  };
 
-  // Context value
-  const value = {
-    // Data
-    dashboardData,
-    analyticsData,
-    recentActivity,
-    performanceMetrics,
+  // Export dashboard data
+  const exportDashboardData = (format = 'json') => {
+    if (!dashboardData || !user) return null;
+
+    const exportData = {
+      exportDate: new Date().toISOString(),
+      userType: user.userType,
+      userName: user.name,
+      ...dashboardData
+    };
+
+    const dataStr = JSON.stringify(exportData, null, 2);
+    const dataBlob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(dataBlob);
     
-    // State
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `timeslice_dashboard_${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    return exportData;
+  };
+
+  const value = {
+    dashboardData,
     loading,
     error,
     lastUpdated,
-    realTimeEnabled,
-    
-    // Actions
-    fetchDashboardData,
-    addActivityUpdate,
-    updateMetric,
-    exportDashboardData,
-    setRealTimeEnabled,
-    
-    // Cache management
-    cache: cache.size,
-    clearCache: () => {
-      setCache(new Map());
-      logger.info('Cache cleared manually');
-    },
-    
-    // Utils
-    isDataStale: () => {
-      if (!lastUpdated) return true;
-      return Date.now() - lastUpdated.getTime() > cacheExpiry;
-    }
+    refreshDashboard,
+    updateStats,
+    addActivity,
+    updateEarnings,
+    exportDashboardData
   };
 
   return (
@@ -333,3 +401,5 @@ export const DashboardProvider = ({ children }) => {
     </DashboardContext.Provider>
   );
 };
+
+export { DashboardContext, DashboardProvider, useDashboardContext };

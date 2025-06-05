@@ -1,151 +1,367 @@
-import React, { useEffect } from 'react';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
-import { useChat } from '../context/ChatContext';
+// File: src/components/Navbar.js
+import React, { useContext, useState, useEffect } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { AuthContext } from '../context/AuthContext';
+import { ChatContext } from '../context/ChatContext';
+import { NotificationContext } from '../context/NotificationContext';
 import RoleSwitcher from './RoleSwitcher';
+import { useLogger } from '../hooks/useLogger';
+import './Navbar.css';
 
 const Navbar = () => {
-  const { currentUser, logout } = useAuth();
-  const { unreadCount, fetchUnreadCount } = useChat();
-  const navigate = useNavigate();
+  const { user, logout } = useContext(AuthContext);
+  const { unreadCount } = useContext(ChatContext);
+  const { notifications } = useContext(NotificationContext);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [showProfileDropdown, setShowProfileDropdown] = useState(false);
+  const [isScrolled, setIsScrolled] = useState(false);
+  
   const location = useLocation();
+  const navigate = useNavigate();
+  const logger = useLogger('Navbar');
 
-  // Refresh unread count when navigating to chat page
+  // Handle scroll effect
   useEffect(() => {
-    if (currentUser && location.pathname === '/chat') {
-      // Small delay to allow chat marking as read
-      const timer = setTimeout(() => {
-        fetchUnreadCount();
-      }, 1000);
-      return () => clearTimeout(timer);
-    }
-  }, [location.pathname, currentUser, fetchUnreadCount]);
+    const handleScroll = () => {
+      setIsScrolled(window.scrollY > 20);
+    };
+    
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
-  // Periodically refresh unread count
+  // Close dropdowns when clicking outside
   useEffect(() => {
-    if (currentUser) {
-      const interval = setInterval(() => {
-        fetchUnreadCount();
-      }, 30000); // Refresh every 30 seconds
+    const handleClickOutside = (event) => {
+      if (!event.target.closest('.profile-dropdown-container')) {
+        setShowProfileDropdown(false);
+      }
+      if (!event.target.closest('.mobile-menu-container')) {
+        setIsMenuOpen(false);
+      }
+    };
 
-      return () => clearInterval(interval);
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, []);
+
+  const handleLogout = async () => {
+    try {
+      logger.info('User logging out');
+      await logout();
+      setShowProfileDropdown(false);
+      navigate('/');
+    } catch (error) {
+      logger.error('Logout failed', { error: error.message });
     }
-  }, [currentUser, fetchUnreadCount]);
-
-  // Don't show navbar on homepage for non-logged in users
-  const isHomePage = location.pathname === '/';
-  const shouldShowNavbar = currentUser || !isHomePage;
-
-  const handleLogout = () => {
-    logout();
-    navigate('/');
   };
 
-  // If we shouldn't show navbar, return null
-  if (!shouldShowNavbar) {
+  const unreadNotifications = notifications.filter(n => !n.read).length;
+  const isActive = (path) => location.pathname === path;
+
+  // Don't show navbar on login/register pages
+  if (['/login', '/register'].includes(location.pathname)) {
     return null;
   }
 
   return (
-    <nav className="navbar">
-      <div className="container">
-        <Link to={currentUser ? "/dashboard" : "/"} style={{ textDecoration: 'none' }}>
-          <h1>TimeSlice</h1>
+    <nav className={`navbar ${isScrolled ? 'navbar-scrolled' : ''}`}>
+      <div className="navbar-container">
+        {/* Logo Section */}
+        <Link to={user ? '/dashboard' : '/'} className="navbar-brand">
+          <div className="brand-logo">
+            <div className="logo-hourglass-nav">
+              <div className="hourglass-top-nav"></div>
+              <div className="hourglass-middle-nav"></div>
+              <div className="hourglass-bottom-nav"></div>
+              <div className="sand-flow">
+                {[...Array(3)].map((_, i) => (
+                  <div key={i} className="sand-particle-nav"></div>
+                ))}
+              </div>
+            </div>
+            <div className="brand-text">
+              <span className="time-text-nav">TIME</span>
+              <span className="slice-text-nav">SLICE</span>
+            </div>
+          </div>
         </Link>
-        
-        {currentUser ? (
-          <ul className="nav-links">
-            <li><Link to="/dashboard">Dashboard</Link></li>
-            
-            {/* Both types of users can now access both sections */}
-            <li><Link to="/browse-tasks">Browse Tasks</Link></li>
-            <li><Link to="/create-task">Post Task</Link></li>
-            <li><Link to="/my-tasks">My Tasks</Link></li>
-            
-            <li><Link to="/my-bookings">My Bookings</Link></li>
-            <li><Link to="/task-applications">Applications</Link></li>
-            
-            {/* Chat with enhanced unread indicator */}
-            <li>
-              <Link to="/chat" style={{ position: 'relative' }}>
-                Chat
+
+        {/* Desktop Navigation */}
+        {user ? (
+          <div className="navbar-menu">
+            <div className="nav-links">
+              <Link 
+                to="/dashboard" 
+                className={`nav-link ${isActive('/dashboard') ? 'active' : ''}`}
+              >
+                <span className="nav-icon">📊</span>
+                Dashboard
+              </Link>
+              
+              <Link 
+                to="/browse-tasks" 
+                className={`nav-link ${isActive('/browse-tasks') ? 'active' : ''}`}
+              >
+                <span className="nav-icon">🔍</span>
+                Browse Tasks
+              </Link>
+              
+              <Link 
+                to="/post-task" 
+                className={`nav-link ${isActive('/post-task') ? 'active' : ''}`}
+              >
+                <span className="nav-icon">➕</span>
+                Post Task
+              </Link>
+              
+              <Link 
+                to="/my-tasks" 
+                className={`nav-link ${isActive('/my-tasks') ? 'active' : ''}`}
+              >
+                <span className="nav-icon">📋</span>
+                My Tasks
+              </Link>
+              
+              <Link 
+                to="/my-bookings" 
+                className={`nav-link ${isActive('/my-bookings') ? 'active' : ''}`}
+              >
+                <span className="nav-icon">📅</span>
+                My Bookings
+              </Link>
+              
+              <Link 
+                to="/applications" 
+                className={`nav-link ${isActive('/applications') ? 'active' : ''}`}
+              >
+                <span className="nav-icon">📝</span>
+                Applications
+              </Link>
+            </div>
+
+            <div className="navbar-actions">
+              {/* Role Switcher */}
+              <RoleSwitcher />
+
+              {/* Credits Display */}
+              <div className="credits-display">
+                <span className="credits-icon">💰</span>
+                <span className="credits-amount">{user.credits || 40}</span>
+                <span className="credits-label">Credits</span>
+              </div>
+
+              {/* Chat Notification */}
+              <Link to="/chat" className="nav-notification">
+                <span className="notification-icon">💬</span>
                 {unreadCount > 0 && (
-                  <span style={{
-                    position: 'absolute',
-                    top: '-8px',
-                    right: '-8px',
-                    background: 'linear-gradient(45deg, #dc3545, #ff6b6b)',
-                    color: 'white',
-                    borderRadius: '50%',
-                    padding: '0.2rem 0.4rem',
-                    fontSize: '0.7rem',
-                    minWidth: '18px',
-                    textAlign: 'center',
-                    fontWeight: 'bold',
-                    boxShadow: '0 2px 4px rgba(220, 53, 69, 0.3)',
-                    animation: unreadCount > 0 ? 'notification-pulse 2s infinite' : 'none'
-                  }}>
-                    {unreadCount > 99 ? '99+' : unreadCount}
-                  </span>
+                  <span className="notification-badge">{unreadCount}</span>
                 )}
               </Link>
-            </li>
-            
-            <li><Link to="/profile">Profile</Link></li>
-            
-            {/* Role Switcher */}
-            <li>
-              <RoleSwitcher />
-            </li>
-            
-            <li>
-              <span style={{ color: '#ffc107' }}>
-                Credits: {currentUser.credits}
-              </span>
-            </li>
-            
-            <li>
-              <span style={{ color: '#17a2b8', fontSize: '0.9rem' }}>
-                {currentUser.primaryRole === 'helper' ? '🤝 Helper' : '📋 Provider'}
-              </span>
-            </li>
-            
-            <li>
-              <button 
-                onClick={handleLogout} 
-                className="btn btn-secondary"
-                style={{ padding: '0.4rem 0.8rem' }}
-              >
-                Logout
-              </button>
-            </li>
-          </ul>
-        ) : (
-          <ul className="nav-links">
-            <li><Link to="/">Home</Link></li>
-            <li><Link to="/login">Login</Link></li>
-            <li><Link to="/register">Register</Link></li>
-          </ul>
-        )}
-      </div>
 
-      {/* CSS for notification animation */}
-      <style jsx>{`
-        @keyframes notification-pulse {
-          0% {
-            transform: scale(1);
-            opacity: 1;
-          }
-          50% {
-            transform: scale(1.1);
-            opacity: 0.8;
-          }
-          100% {
-            transform: scale(1);
-            opacity: 1;
-          }
-        }
-      `}</style>
+              {/* General Notifications */}
+              <div className="nav-notification">
+                <span className="notification-icon">🔔</span>
+                {unreadNotifications > 0 && (
+                  <span className="notification-badge">{unreadNotifications}</span>
+                )}
+              </div>
+
+              {/* Profile Dropdown */}
+              <div className="profile-dropdown-container">
+                <button 
+                  className="profile-button"
+                  onClick={() => setShowProfileDropdown(!showProfileDropdown)}
+                >
+                  <div className="profile-avatar">
+                    {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
+                  </div>
+                  <span className="profile-name">{user.name || 'User'}</span>
+                  <span className="dropdown-arrow">
+                    {showProfileDropdown ? '▴' : '▾'}
+                  </span>
+                </button>
+
+                {showProfileDropdown && (
+                  <div className="profile-dropdown">
+                    <div className="dropdown-header">
+                      <div className="user-info">
+                        <div className="user-avatar">
+                          {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
+                        </div>
+                        <div className="user-details">
+                          <div className="user-name">{user.name || 'User'}</div>
+                          <div className="user-email">{user.email}</div>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="dropdown-divider"></div>
+                    
+                    <div className="dropdown-links">
+                      <Link 
+                        to="/profile" 
+                        className="dropdown-link"
+                        onClick={() => setShowProfileDropdown(false)}
+                      >
+                        <span className="dropdown-icon">👤</span>
+                        Profile Settings
+                      </Link>
+                      <Link 
+                        to="/dashboard" 
+                        className="dropdown-link"
+                        onClick={() => setShowProfileDropdown(false)}
+                      >
+                        <span className="dropdown-icon">📊</span>
+                        Analytics
+                      </Link>
+                      <Link 
+                        to="/settings" 
+                        className="dropdown-link"
+                        onClick={() => setShowProfileDropdown(false)}
+                      >
+                        <span className="dropdown-icon">⚙️</span>
+                        Settings
+                      </Link>
+                    </div>
+                    
+                    <div className="dropdown-divider"></div>
+                    
+                    <button 
+                      className="dropdown-link logout-link"
+                      onClick={handleLogout}
+                    >
+                      <span className="dropdown-icon">🚪</span>
+                      Sign Out
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="navbar-menu">
+            <div className="nav-links">
+              <Link 
+                to="/" 
+                className={`nav-link ${isActive('/') ? 'active' : ''}`}
+              >
+                Home
+              </Link>
+              <Link 
+                to="/about" 
+                className={`nav-link ${isActive('/about') ? 'active' : ''}`}
+              >
+                About
+              </Link>
+              <Link 
+                to="/how-it-works" 
+                className={`nav-link ${isActive('/how-it-works') ? 'active' : ''}`}
+              >
+                How It Works
+              </Link>
+            </div>
+            
+            <div className="navbar-actions">
+              <Link to="/login" className="btn btn-outline btn-sm">
+                Login
+              </Link>
+              <Link to="/register" className="btn btn-primary btn-sm">
+                Get Started
+              </Link>
+            </div>
+          </div>
+        )}
+
+        {/* Mobile Menu Toggle */}
+        <div className="mobile-menu-container">
+          <button 
+            className="mobile-menu-toggle"
+            onClick={() => setIsMenuOpen(!isMenuOpen)}
+          >
+            <span className={`hamburger ${isMenuOpen ? 'open' : ''}`}>
+              <span></span>
+              <span></span>
+              <span></span>
+            </span>
+          </button>
+
+          {/* Mobile Menu */}
+          {isMenuOpen && (
+            <div className="mobile-menu">
+              <div className="mobile-menu-content">
+                {user ? (
+                  <>
+                    <div className="mobile-user-info">
+                      <div className="mobile-avatar">
+                        {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
+                      </div>
+                      <div className="mobile-user-details">
+                        <div className="mobile-user-name">{user.name || 'User'}</div>
+                        <div className="mobile-user-email">{user.email}</div>
+                      </div>
+                    </div>
+                    
+                    <div className="mobile-nav-links">
+                      <Link to="/dashboard" className="mobile-nav-link">
+                        <span className="mobile-nav-icon">📊</span>
+                        Dashboard
+                      </Link>
+                      <Link to="/browse-tasks" className="mobile-nav-link">
+                        <span className="mobile-nav-icon">🔍</span>
+                        Browse Tasks
+                      </Link>
+                      <Link to="/post-task" className="mobile-nav-link">
+                        <span className="mobile-nav-icon">➕</span>
+                        Post Task
+                      </Link>
+                      <Link to="/my-tasks" className="mobile-nav-link">
+                        <span className="mobile-nav-icon">📋</span>
+                        My Tasks
+                      </Link>
+                      <Link to="/my-bookings" className="mobile-nav-link">
+                        <span className="mobile-nav-icon">📅</span>
+                        My Bookings
+                      </Link>
+                      <Link to="/applications" className="mobile-nav-link">
+                        <span className="mobile-nav-icon">📝</span>
+                        Applications
+                      </Link>
+                      <Link to="/chat" className="mobile-nav-link">
+                        <span className="mobile-nav-icon">💬</span>
+                        Chat
+                        {unreadCount > 0 && (
+                          <span className="mobile-badge">{unreadCount}</span>
+                        )}
+                      </Link>
+                      <Link to="/profile" className="mobile-nav-link">
+                        <span className="mobile-nav-icon">👤</span>
+                        Profile
+                      </Link>
+                    </div>
+                    
+                    <button 
+                      className="mobile-logout-btn"
+                      onClick={handleLogout}
+                    >
+                      <span className="mobile-nav-icon">🚪</span>
+                      Sign Out
+                    </button>
+                  </>
+                ) : (
+                  <div className="mobile-nav-links">
+                    <Link to="/" className="mobile-nav-link">Home</Link>
+                    <Link to="/about" className="mobile-nav-link">About</Link>
+                    <Link to="/how-it-works" className="mobile-nav-link">How It Works</Link>
+                    <Link to="/login" className="mobile-nav-link">Login</Link>
+                    <Link to="/register" className="mobile-nav-link">Get Started</Link>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
     </nav>
   );
 };

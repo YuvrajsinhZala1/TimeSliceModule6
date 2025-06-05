@@ -1,344 +1,585 @@
-import React, { useState } from 'react';
+// File: src/pages/Register.js
+import React, { useState, useContext, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { AuthContext } from '../context/AuthContext';
+import UserTypeSelector from '../components/UserTypeSelector';
+import { useLogger } from '../hooks/useLogger';
+import './Register.css';
 
 const Register = () => {
+  const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
-    username: '',
+    name: '',
     email: '',
     password: '',
-    primaryRole: '',
+    confirmPassword: '',
+    userType: 'helper',
+    skills: [],
     bio: '',
-    skills: ''
+    hourlyRate: '',
+    agreeTerms: false
   });
-  const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   
-  const { signup } = useAuth();
+  const { register, user } = useContext(AuthContext);
   const navigate = useNavigate();
+  const logger = useLogger('Register');
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (user) {
+      logger.info('User already logged in, redirecting to dashboard');
+      navigate('/dashboard');
+    }
+  }, [user, navigate, logger]);
+
+  const skillOptions = [
+    'Web Development', 'Mobile Development', 'UI/UX Design', 'Graphic Design',
+    'Content Writing', 'Digital Marketing', 'Data Analysis', 'Video Editing',
+    'Photography', 'Translation', 'Virtual Assistant', 'Accounting',
+    'Project Management', 'SEO', 'Social Media Management', 'Tutoring'
+  ];
 
   const handleChange = (e) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value
-    });
+    const { name, value, type, checked } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: type === 'checkbox' ? checked : value
+    }));
+    // Clear error when user starts typing
+    if (error) setError('');
   };
 
-  const handleRoleChange = (primaryRole) => {
-    setFormData({
-      ...formData,
-      primaryRole
-    });
+  const handleSkillToggle = (skill) => {
+    setFormData(prev => ({
+      ...prev,
+      skills: prev.skills.includes(skill)
+        ? prev.skills.filter(s => s !== skill)
+        : [...prev.skills, skill]
+    }));
+  };
+
+  const validateStep = (stepNumber) => {
+    switch (stepNumber) {
+      case 1:
+        if (!formData.name.trim()) {
+          setError('Name is required');
+          return false;
+        }
+        if (!formData.email.trim()) {
+          setError('Email is required');
+          return false;
+        }
+        if (!formData.email.includes('@')) {
+          setError('Please enter a valid email address');
+          return false;
+        }
+        break;
+      case 2:
+        if (!formData.password) {
+          setError('Password is required');
+          return false;
+        }
+        if (formData.password.length < 8) {
+          setError('Password must be at least 8 characters long');
+          return false;
+        }
+        if (formData.password !== formData.confirmPassword) {
+          setError('Passwords do not match');
+          return false;
+        }
+        break;
+      case 3:
+        if (formData.userType === 'helper' && formData.skills.length === 0) {
+          setError('Please select at least one skill');
+          return false;
+        }
+        if (formData.userType === 'helper' && !formData.hourlyRate) {
+          setError('Please set your hourly rate');
+          return false;
+        }
+        break;
+      case 4:
+        if (!formData.agreeTerms) {
+          setError('You must agree to the terms and conditions');
+          return false;
+        }
+        break;
+      default:
+        break;
+    }
+    return true;
+  };
+
+  const nextStep = () => {
+    if (validateStep(step)) {
+      setError('');
+      setStep(step + 1);
+      logger.info('Registration step completed', { step, userType: formData.userType });
+    }
+  };
+
+  const prevStep = () => {
+    setStep(step - 1);
+    setError('');
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
-    setLoading(true);
-
-    if (!formData.primaryRole) {
-      setError('Please select your primary role');
-      setLoading(false);
+    
+    if (!validateStep(4)) {
       return;
     }
 
+    setLoading(true);
+    setError('');
+
     try {
-      const userData = {
-        ...formData,
-        skills: formData.skills.split(',').map(skill => skill.trim()).filter(skill => skill)
-      };
-      
-      await signup(userData);
+      logger.info('Attempting registration', { 
+        email: formData.email, 
+        userType: formData.userType,
+        skillCount: formData.skills.length 
+      });
+
+      await register({
+        name: formData.name,
+        email: formData.email,
+        password: formData.password,
+        userType: formData.userType,
+        skills: formData.skills,
+        bio: formData.bio,
+        hourlyRate: formData.hourlyRate ? parseFloat(formData.hourlyRate) : null
+      });
+
+      logger.info('Registration successful');
       navigate('/dashboard');
-    } catch (error) {
-      setError(error.response?.data?.message || 'Failed to register');
+      
+    } catch (err) {
+      logger.error('Registration failed', { error: err.message });
+      setError(err.message || 'Registration failed. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
+  const getStepTitle = () => {
+    switch (step) {
+      case 1: return 'Basic Information';
+      case 2: return 'Account Security';
+      case 3: return 'Profile Setup';
+      case 4: return 'Final Step';
+      default: return 'Registration';
+    }
+  };
+
+  const getStepDescription = () => {
+    switch (step) {
+      case 1: return 'Tell us about yourself';
+      case 2: return 'Create a secure password';
+      case 3: return 'Set up your profile';
+      case 4: return 'Review and complete';
+      default: return '';
+    }
+  };
+
   return (
-    <div className="auth-page">
-      <div className="auth-container" style={{ maxWidth: '600px' }}>
-        <div className="auth-header">
-          <div className="auth-logo">
-            <div className="auth-hourglass">
-              <div className="auth-hourglass-top"></div>
-              <div className="auth-hourglass-middle"></div>
-              <div className="auth-hourglass-bottom"></div>
-              <div className="auth-sand"></div>
-            </div>
-            <h1 className="auth-title">TimeSlice</h1>
-          </div>
-          <p className="auth-subtitle">Join our community of helpers and task providers</p>
+    <div className="register-page">
+      {/* Background Animation */}
+      <div className="register-background">
+        <div className="floating-particles">
+          {[...Array(25)].map((_, i) => (
+            <div key={i} className="particle" style={{
+              '--delay': `${i * 0.4}s`,
+              '--duration': `${4 + Math.random() * 3}s`
+            }}></div>
+          ))}
         </div>
-        
-        {error && (
-          <div className="error" style={{ marginBottom: '2rem', borderRadius: '12px' }}>
-            {error}
-          </div>
-        )}
-        
-        <form onSubmit={handleSubmit} className="auth-form">
-          {/* Basic Information */}
-          <div style={{ 
-            background: 'rgba(0, 119, 190, 0.05)', 
-            padding: '1.5rem', 
-            borderRadius: '12px', 
-            marginBottom: '2rem',
-            border: '1px solid rgba(0, 119, 190, 0.1)'
-          }}>
-            <h3 style={{ 
-              color: 'var(--ocean-dark)', 
-              marginBottom: '1rem', 
-              fontSize: '1.2rem',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem'
-            }}>
-              <span>👤</span> Basic Information
-            </h3>
-            
-            <div className="auth-form-group">
-              <label htmlFor="username">Username</label>
-              <input
-                id="username"
-                type="text"
-                name="username"
-                value={formData.username}
-                onChange={handleChange}
-                placeholder="Choose a unique username"
-                required
-              />
-            </div>
-            
-            <div className="auth-form-group">
-              <label htmlFor="email">Email Address</label>
-              <input
-                id="email"
-                type="email"
-                name="email"
-                value={formData.email}
-                onChange={handleChange}
-                placeholder="Enter your email address"
-                required
-              />
-            </div>
-            
-            <div className="auth-form-group">
-              <label htmlFor="password">Password</label>
-              <input
-                id="password"
-                type="password"
-                name="password"
-                value={formData.password}
-                onChange={handleChange}
-                placeholder="Create a strong password"
-                required
-              />
-              <small>Choose a strong password with at least 6 characters</small>
-            </div>
-          </div>
+      </div>
 
-          {/* Role Selection */}
-          <div style={{ 
-            background: 'rgba(255, 107, 107, 0.05)', 
-            padding: '1.5rem', 
-            borderRadius: '12px', 
-            marginBottom: '2rem',
-            border: '1px solid rgba(255, 107, 107, 0.1)'
-          }}>
-            <h3 style={{ 
-              color: 'var(--ocean-dark)', 
-              marginBottom: '1rem', 
-              fontSize: '1.2rem',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem'
-            }}>
-              <span>🎯</span> Choose Your Primary Role
-            </h3>
-            <p style={{ 
-              color: 'var(--text-light)', 
-              marginBottom: '1.5rem', 
-              fontSize: '0.95rem' 
-            }}>
-              You can do both, but pick your main focus to get started
-            </p>
-            
-            <div className="role-selector">
-              <label className="role-option">
-                <input
-                  type="radio"
-                  name="primaryRole"
-                  value="helper"
-                  checked={formData.primaryRole === 'helper'}
-                  onChange={(e) => handleRoleChange(e.target.value)}
-                />
-                <div className="role-card">
-                  <div className="role-icon">🤝</div>
-                  <div className="role-title">Helper</div>
-                  <div className="role-description">
-                    Primarily help others with tasks and earn credits
+      <div className="register-container">
+        {/* Left Side - Branding */}
+        <div className="register-branding">
+          <div className="brand-content">
+            {/* Logo */}
+            <div className="logo-container">
+              <div className="logo-hourglass">
+                <div className="hourglass-top"></div>
+                <div className="hourglass-middle"></div>
+                <div className="hourglass-bottom"></div>
+                <div className="sand-particles">
+                  {[...Array(8)].map((_, i) => (
+                    <div key={i} className="sand-particle"></div>
+                  ))}
+                </div>
+              </div>
+              <h1 className="brand-name">
+                <span className="time-text">TIME</span>
+                <span className="slice-text">SLICE</span>
+              </h1>
+            </div>
+
+            {/* Registration Benefits */}
+            <div className="benefits-preview">
+              <h2>Join our growing community</h2>
+              <div className="benefit-list">
+                <div className="benefit-item">
+                  <div className="benefit-icon">🚀</div>
+                  <div className="benefit-content">
+                    <h3>Start Earning Today</h3>
+                    <p>Monetize your skills and help others with their tasks</p>
                   </div>
                 </div>
-              </label>
-              
-              <label className="role-option">
-                <input
-                  type="radio"
-                  name="primaryRole"
-                  value="taskProvider"
-                  checked={formData.primaryRole === 'taskProvider'}
-                  onChange={(e) => handleRoleChange(e.target.value)}
-                />
-                <div className="role-card">
-                  <div className="role-icon">📋</div>
-                  <div className="role-title">Task Provider</div>
-                  <div className="role-description">
-                    Primarily post tasks and get help using credits
+                <div className="benefit-item">
+                  <div className="benefit-icon">🌟</div>
+                  <div className="benefit-content">
+                    <h3>Build Your Reputation</h3>
+                    <p>Gain recognition and grow your professional network</p>
                   </div>
                 </div>
-              </label>
-            </div>
-            
-            <div className="role-note">
-              <span className="role-note-icon">💡</span>
-              <span className="role-note-text">
-                Don't worry! You can both post tasks AND help others regardless of your primary role.
-              </span>
+                <div className="benefit-item">
+                  <div className="benefit-icon">🤝</div>
+                  <div className="benefit-content">
+                    <h3>Flexible Working</h3>
+                    <p>Choose when and how you want to work</p>
+                  </div>
+                </div>
+                <div className="benefit-item">
+                  <div className="benefit-icon">🎯</div>
+                  <div className="benefit-content">
+                    <h3>Perfect Matches</h3>
+                    <p>Our algorithm connects you with the right opportunities</p>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
+        </div>
 
-          {/* Profile Information */}
-          <div style={{ 
-            background: 'rgba(0, 119, 190, 0.05)', 
-            padding: '1.5rem', 
-            borderRadius: '12px', 
-            marginBottom: '2rem',
-            border: '1px solid rgba(0, 119, 190, 0.1)'
-          }}>
-            <h3 style={{ 
-              color: 'var(--ocean-dark)', 
-              marginBottom: '1rem', 
-              fontSize: '1.2rem',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem'
-            }}>
-              <span>✨</span> Profile Information
-            </h3>
-            
-            <div className="auth-form-group">
-              <label htmlFor="bio">Bio (Optional)</label>
-              <textarea
-                id="bio"
-                name="bio"
-                value={formData.bio}
-                onChange={handleChange}
-                placeholder="Tell others about yourself, your experience, and what you enjoy helping with..."
-                rows="3"
-                style={{ resize: 'vertical' }}
-              />
-              <small>A good bio helps others understand your expertise and interests</small>
+        {/* Right Side - Registration Form */}
+        <div className="register-form-container">
+          <div className="register-form-content">
+            {/* Progress Bar */}
+            <div className="progress-container">
+              <div className="progress-bar">
+                <div 
+                  className="progress-fill" 
+                  style={{ width: `${(step / 4) * 100}%` }}
+                ></div>
+              </div>
+              <div className="progress-steps">
+                {[1, 2, 3, 4].map(num => (
+                  <div 
+                    key={num}
+                    className={`progress-step ${step >= num ? 'active' : ''} ${step === num ? 'current' : ''}`}
+                  >
+                    {step > num ? '✓' : num}
+                  </div>
+                ))}
+              </div>
             </div>
-            
-            <div className="auth-form-group">
-              <label htmlFor="skills">Your Skills (Optional)</label>
-              <input
-                id="skills"
-                type="text"
-                name="skills"
-                value={formData.skills}
-                onChange={handleChange}
-                placeholder="e.g., JavaScript, React, Design, Writing, Data Analysis, Marketing"
-              />
-              <small>
-                Add skills you have OR skills you might need help with. 
-                Separate multiple skills with commas.
-              </small>
+
+            <div className="form-header">
+              <h2>{getStepTitle()}</h2>
+              <p>{getStepDescription()}</p>
             </div>
-          </div>
-          
-          <button 
-            type="submit" 
-            className="auth-button"
-            disabled={loading}
-          >
-            {loading ? (
-              <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem' }}>
-                <span style={{ 
-                  width: '20px', 
-                  height: '20px', 
-                  border: '2px solid rgba(255,255,255,0.3)', 
-                  borderTop: '2px solid white', 
-                  borderRadius: '50%',
-                  animation: 'spin 1s linear infinite'
-                }}></span>
-                Creating Account...
-              </span>
-            ) : (
-              'Join TimeSlice Community'
+
+            {error && (
+              <div className="alert alert-error">
+                <div className="alert-icon">⚠️</div>
+                <div className="alert-message">{error}</div>
+              </div>
             )}
-          </button>
-        </form>
-        
-        <div className="auth-footer">
-          <p style={{ color: '#666', marginBottom: '0' }}>
-            Already have an account?{' '}
-            <Link to="/login">Sign in to TimeSlice</Link>
-          </p>
-        </div>
-        
-        {/* Welcome Benefits */}
-        <div style={{ 
-          marginTop: '2rem', 
-          padding: '1.5rem', 
-          background: 'linear-gradient(135deg, rgba(0, 119, 190, 0.1), rgba(255, 107, 107, 0.1))', 
-          borderRadius: '15px',
-          border: '1px solid rgba(0, 119, 190, 0.2)'
-        }}>
-          <h4 style={{ 
-            color: 'var(--ocean-dark)', 
-            marginBottom: '1rem', 
-            textAlign: 'center',
-            fontSize: '1.1rem'
-          }}>
-            🎉 What you'll get when you join
-          </h4>
-          <div style={{ 
-            display: 'grid', 
-            gridTemplateColumns: 'repeat(2, 1fr)', 
-            gap: '1rem',
-            fontSize: '0.9rem'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <span style={{ fontSize: '1.3rem' }}>🎁</span>
-              <span><strong>100 free credits</strong> to get started</span>
+
+            <form onSubmit={handleSubmit} className="register-form">
+              {/* Step 1: Basic Information */}
+              {step === 1 && (
+                <div className="form-step fade-in">
+                  <div className="form-group">
+                    <label htmlFor="name" className="form-label">
+                      Full Name
+                    </label>
+                    <div className="input-wrapper">
+                      <input
+                        type="text"
+                        id="name"
+                        name="name"
+                        value={formData.name}
+                        onChange={handleChange}
+                        placeholder="Enter your full name"
+                        className="form-control"
+                        required
+                        disabled={loading}
+                      />
+                      <div className="input-icon">👤</div>
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label htmlFor="email" className="form-label">
+                      Email Address
+                    </label>
+                    <div className="input-wrapper">
+                      <input
+                        type="email"
+                        id="email"
+                        name="email"
+                        value={formData.email}
+                        onChange={handleChange}
+                        placeholder="Enter your email address"
+                        className="form-control"
+                        required
+                        disabled={loading}
+                      />
+                      <div className="input-icon">📧</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Step 2: Password */}
+              {step === 2 && (
+                <div className="form-step fade-in">
+                  <div className="form-group">
+                    <label htmlFor="password" className="form-label">
+                      Password
+                    </label>
+                    <div className="input-wrapper">
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        id="password"
+                        name="password"
+                        value={formData.password}
+                        onChange={handleChange}
+                        placeholder="Create a strong password"
+                        className="form-control"
+                        required
+                        disabled={loading}
+                      />
+                      <button
+                        type="button"
+                        className="password-toggle"
+                        onClick={() => setShowPassword(!showPassword)}
+                        disabled={loading}
+                      >
+                        {showPassword ? '🙈' : '👁️'}
+                      </button>
+                    </div>
+                    <div className="password-hint">
+                      At least 8 characters with numbers and letters
+                    </div>
+                  </div>
+
+                  <div className="form-group">
+                    <label htmlFor="confirmPassword" className="form-label">
+                      Confirm Password
+                    </label>
+                    <div className="input-wrapper">
+                      <input
+                        type={showConfirmPassword ? 'text' : 'password'}
+                        id="confirmPassword"
+                        name="confirmPassword"
+                        value={formData.confirmPassword}
+                        onChange={handleChange}
+                        placeholder="Confirm your password"
+                        className="form-control"
+                        required
+                        disabled={loading}
+                      />
+                      <button
+                        type="button"
+                        className="password-toggle"
+                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        disabled={loading}
+                      >
+                        {showConfirmPassword ? '🙈' : '👁️'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Step 3: Profile Setup */}
+              {step === 3 && (
+                <div className="form-step fade-in">
+                  <div className="form-group">
+                    <label className="form-label">I want to</label>
+                    <UserTypeSelector
+                      selectedType={formData.userType}
+                      onTypeChange={(type) => setFormData(prev => ({ ...prev, userType: type }))}
+                    />
+                  </div>
+
+                  {formData.userType === 'helper' && (
+                    <>
+                      <div className="form-group">
+                        <label className="form-label">Your Skills</label>
+                        <div className="skills-grid">
+                          {skillOptions.map(skill => (
+                            <button
+                              key={skill}
+                              type="button"
+                              className={`skill-chip ${formData.skills.includes(skill) ? 'selected' : ''}`}
+                              onClick={() => handleSkillToggle(skill)}
+                              disabled={loading}
+                            >
+                              {skill}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="form-group">
+                        <label htmlFor="hourlyRate" className="form-label">
+                          Hourly Rate (Credits)
+                        </label>
+                        <div className="input-wrapper">
+                          <input
+                            type="number"
+                            id="hourlyRate"
+                            name="hourlyRate"
+                            value={formData.hourlyRate}
+                            onChange={handleChange}
+                            placeholder="e.g., 25"
+                            className="form-control"
+                            min="1"
+                            disabled={loading}
+                          />
+                          <div className="input-icon">💰</div>
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  <div className="form-group">
+                    <label htmlFor="bio" className="form-label">
+                      Brief Bio (Optional)
+                    </label>
+                    <textarea
+                      id="bio"
+                      name="bio"
+                      value={formData.bio}
+                      onChange={handleChange}
+                      placeholder="Tell us about yourself and your experience..."
+                      className="form-control"
+                      rows="3"
+                      disabled={loading}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Step 4: Terms and Completion */}
+              {step === 4 && (
+                <div className="form-step fade-in">
+                  <div className="completion-summary">
+                    <h3>Almost done!</h3>
+                    <div className="summary-item">
+                      <strong>Name:</strong> {formData.name}
+                    </div>
+                    <div className="summary-item">
+                      <strong>Email:</strong> {formData.email}
+                    </div>
+                    <div className="summary-item">
+                      <strong>Role:</strong> {formData.userType === 'helper' ? 'Helper' : 'Task Provider'}
+                    </div>
+                    {formData.userType === 'helper' && formData.skills.length > 0 && (
+                      <div className="summary-item">
+                        <strong>Skills:</strong> {formData.skills.join(', ')}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="form-group">
+                    <label className="checkbox-wrapper">
+                      <input
+                        type="checkbox"
+                        name="agreeTerms"
+                        checked={formData.agreeTerms}
+                        onChange={handleChange}
+                        disabled={loading}
+                      />
+                      <span className="checkmark"></span>
+                      I agree to the{' '}
+                      <Link to="/terms" target="_blank" className="terms-link">
+                        Terms of Service
+                      </Link>{' '}
+                      and{' '}
+                      <Link to="/privacy" target="_blank" className="terms-link">
+                        Privacy Policy
+                      </Link>
+                    </label>
+                  </div>
+                </div>
+              )}
+
+              {/* Form Navigation */}
+              <div className="form-navigation">
+                {step > 1 && (
+                  <button 
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={prevStep}
+                    disabled={loading}
+                  >
+                    ← Previous
+                  </button>
+                )}
+                
+                {step < 4 ? (
+                  <button 
+                    type="button"
+                    className="btn btn-primary btn-next"
+                    onClick={nextStep}
+                    disabled={loading}
+                  >
+                    Next →
+                  </button>
+                ) : (
+                  <button 
+                    type="submit"
+                    className="btn btn-primary btn-complete"
+                    disabled={loading || !formData.agreeTerms}
+                  >
+                    {loading ? (
+                      <>
+                        <div className="loading-spinner"></div>
+                        Creating Account...
+                      </>
+                    ) : (
+                      <>
+                        Create Account
+                        <span className="btn-arrow">🚀</span>
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
+            </form>
+
+            <div className="form-footer">
+              <p>
+                Already have an account?{' '}
+                <Link to="/login" className="login-link">
+                  Sign in to TimeSlice
+                </Link>
+              </p>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <span style={{ fontSize: '1.3rem' }}>🚀</span>
-              <span><strong>Instant access</strong> to all features</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <span style={{ fontSize: '1.3rem' }}>🔄</span>
-              <span><strong>Dual roles</strong> - help & get help</span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <span style={{ fontSize: '1.3rem' }}>🛡️</span>
-              <span><strong>Safe platform</strong> with reviews</span>
+
+            {/* Professional Footer */}
+            <div className="register-footer">
+              <p>&copy; 2024 TimeSlice. Join the future of work.</p>
+              <div className="footer-links">
+                <Link to="/help">Help Center</Link>
+                <Link to="/about">About Us</Link>
+                <Link to="/contact">Contact</Link>
+              </div>
             </div>
           </div>
         </div>
       </div>
-      
-      {/* Loading spinner animation */}
-      <style jsx>{`
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-      `}</style>
     </div>
   );
 };
