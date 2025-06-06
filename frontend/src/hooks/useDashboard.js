@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useDashboardContext } from '../context/DashboardContext';
 import { useLogger } from './useLogger';
 
@@ -10,17 +10,25 @@ export const useDashboard = (timeRange = '7d', autoRefresh = true, refreshInterv
     performanceMetrics,
     loading: contextLoading,
     error: contextError,
-    fetchDashboardData,
-    isDataStale
+    refreshDashboard, // Use this instead of fetchDashboardData
+    lastUpdated
   } = useDashboardContext();
 
-  const logger = useLogger();
+  const logger = useLogger('useDashboard');
   const [localLoading, setLocalLoading] = useState(false);
   const [localError, setLocalError] = useState(null);
   const refreshTimerRef = useRef(null);
   const mountedRef = useRef(true);
+  const lastTimeRangeRef = useRef(timeRange);
 
-  // Refresh data function
+  // Stable reference to check if data is stale
+  const isDataStale = useCallback(() => {
+    if (!lastUpdated) return true;
+    const staleThreshold = 5 * 60 * 1000; // 5 minutes
+    return Date.now() - new Date(lastUpdated).getTime() > staleThreshold;
+  }, [lastUpdated]);
+
+  // Memoized refresh function with stable dependencies
   const refreshData = useCallback(async (forceRefresh = false) => {
     if (!mountedRef.current) return;
 
@@ -29,21 +37,20 @@ export const useDashboard = (timeRange = '7d', autoRefresh = true, refreshInterv
       setLocalError(null);
 
       logger.debug('Refreshing dashboard data', { 
-        timeRange, 
-        forceRefresh,
-        isStale: isDataStale()
+        timeRange: lastTimeRangeRef.current, 
+        forceRefresh
       });
 
-      await fetchDashboardData(timeRange, forceRefresh);
+      // Use the context's refresh function
+      await refreshDashboard();
 
-      logger.info('Dashboard data refreshed successfully', { timeRange });
+      logger.info('Dashboard data refreshed successfully');
 
     } catch (error) {
       if (mountedRef.current) {
         setLocalError(error.message);
         logger.error('Dashboard refresh failed', {
-          error: error.message,
-          timeRange
+          error: error.message
         });
       }
     } finally {
@@ -51,11 +58,36 @@ export const useDashboard = (timeRange = '7d', autoRefresh = true, refreshInterv
         setLocalLoading(false);
       }
     }
-  }, [timeRange, fetchDashboardData, isDataStale, logger]);
+  }, [refreshDashboard, logger]); // Stable dependencies only
 
-  // Auto-refresh setup
+  // Update time range ref when it changes
   useEffect(() => {
-    if (!autoRefresh || refreshInterval <= 0) return;
+    lastTimeRangeRef.current = timeRange;
+  }, [timeRange]);
+
+  // Initial data fetch - only run once when component mounts
+  useEffect(() => {
+    let mounted = true;
+    
+    const initializeDashboard = async () => {
+      if (!dashboardData && mounted) {
+        logger.info('Initial dashboard data fetch');
+        await refreshData(true);
+      }
+    };
+
+    initializeDashboard();
+
+    return () => {
+      mounted = false;
+    };
+  }, []); // Empty dependency array - only run on mount
+
+  // Auto-refresh setup - separate from initial fetch
+  useEffect(() => {
+    if (!autoRefresh || refreshInterval <= 0) {
+      return;
+    }
 
     // Clear existing timer
     if (refreshTimerRef.current) {
@@ -64,19 +96,13 @@ export const useDashboard = (timeRange = '7d', autoRefresh = true, refreshInterv
 
     // Set up new timer
     refreshTimerRef.current = setInterval(() => {
-      if (mountedRef.current && !document.hidden) {
-        logger.debug('Auto-refresh triggered', { 
-          interval: refreshInterval,
-          timeRange 
-        });
+      if (mountedRef.current && !document.hidden && isDataStale()) {
+        logger.debug('Auto-refresh triggered');
         refreshData(false);
       }
     }, refreshInterval);
 
-    logger.info('Auto-refresh configured', { 
-      interval: refreshInterval,
-      timeRange 
-    });
+    logger.info('Auto-refresh configured', { interval: refreshInterval });
 
     return () => {
       if (refreshTimerRef.current) {
@@ -84,19 +110,13 @@ export const useDashboard = (timeRange = '7d', autoRefresh = true, refreshInterv
         refreshTimerRef.current = null;
       }
     };
-  }, [autoRefresh, refreshInterval, timeRange, refreshData, logger]);
+  }, [autoRefresh, refreshInterval, refreshData, isDataStale, logger]);
 
-  // Initial data fetch
-  useEffect(() => {
-    if (!dashboardData || isDataStale()) {
-      logger.info('Initial dashboard data fetch', { timeRange });
-      refreshData(true);
-    }
-  }, [timeRange]);
-
-  // Handle visibility change (pause refresh when tab is hidden)
+  // Handle visibility change - separate effect
   useEffect(() => {
     const handleVisibilityChange = () => {
+      if (!autoRefresh) return;
+
       if (document.hidden) {
         logger.debug('Tab hidden, pausing auto-refresh');
         if (refreshTimerRef.current) {
@@ -105,9 +125,9 @@ export const useDashboard = (timeRange = '7d', autoRefresh = true, refreshInterv
         }
       } else {
         logger.debug('Tab visible, resuming auto-refresh');
-        if (autoRefresh && refreshInterval > 0) {
+        if (refreshInterval > 0) {
           refreshTimerRef.current = setInterval(() => {
-            if (mountedRef.current) {
+            if (mountedRef.current && isDataStale()) {
               refreshData(false);
             }
           }, refreshInterval);
@@ -120,7 +140,7 @@ export const useDashboard = (timeRange = '7d', autoRefresh = true, refreshInterv
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [autoRefresh, refreshInterval, refreshData, logger]);
+  }, [autoRefresh, refreshInterval, refreshData, isDataStale, logger]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -133,69 +153,57 @@ export const useDashboard = (timeRange = '7d', autoRefresh = true, refreshInterv
     };
   }, [logger]);
 
-  // Derived state
-  const loading = contextLoading || localLoading;
-  const error = contextError || localError;
-  const hasData = !!(dashboardData && analyticsData);
+  // Memoized derived state
+  const derivedState = useMemo(() => {
+    const loading = contextLoading || localLoading;
+    const error = contextError || localError;
+    const hasData = !!(dashboardData && Object.keys(dashboardData).length > 0);
 
-  // Performance metrics calculation
-  const calculatePerformanceScore = useCallback(() => {
-    if (!dashboardData) return 0;
+    return { loading, error, hasData };
+  }, [contextLoading, localLoading, contextError, localError, dashboardData]);
+
+  // Memoized performance score calculation
+  const performanceScore = useMemo(() => {
+    if (!dashboardData?.stats) return 0;
 
     try {
+      const stats = dashboardData.stats;
       const {
-        applicationSuccessRate = 0,
-        rating = 0,
-        completedTasks = 0,
-        totalRatings = 0
-      } = dashboardData;
+        completionRate = 90,
+        avgRating = 4.5,
+        totalTasks = 0,
+        responseTime = 2
+      } = stats;
 
-      // Weighted score calculation
-      const successWeight = 0.4;
+      // Simple weighted score
+      const completionWeight = 0.4;
       const ratingWeight = 0.3;
       const experienceWeight = 0.2;
-      const consistencyWeight = 0.1;
+      const speedWeight = 0.1;
 
-      const normalizedSuccess = Math.min(applicationSuccessRate / 100, 1);
-      const normalizedRating = Math.min(rating / 5, 1);
-      const normalizedExperience = Math.min(completedTasks / 50, 1);
-      const normalizedConsistency = Math.min(totalRatings / 20, 1);
+      const normalizedCompletion = Math.min(completionRate / 100, 1);
+      const normalizedRating = Math.min(avgRating / 5, 1);
+      const normalizedExperience = Math.min(totalTasks / 50, 1);
+      const normalizedSpeed = Math.max(0, Math.min(1, (5 - responseTime) / 5));
 
       const score = (
-        normalizedSuccess * successWeight +
+        normalizedCompletion * completionWeight +
         normalizedRating * ratingWeight +
         normalizedExperience * experienceWeight +
-        normalizedConsistency * consistencyWeight
+        normalizedSpeed * speedWeight
       ) * 100;
-
-      logger.debug('Performance score calculated', {
-        score: Math.round(score),
-        components: {
-          success: normalizedSuccess,
-          rating: normalizedRating,
-          experience: normalizedExperience,
-          consistency: normalizedConsistency
-        }
-      });
 
       return Math.round(score);
     } catch (error) {
-      logger.error('Performance score calculation failed', {
-        error: error.message
-      });
+      logger.error('Performance score calculation failed', { error: error.message });
       return 0;
     }
   }, [dashboardData, logger]);
 
-  // Activity summary
-  const getActivitySummary = useCallback(() => {
+  // Memoized activity summary
+  const activitySummary = useMemo(() => {
     if (!recentActivity || recentActivity.length === 0) {
-      return {
-        total: 0,
-        today: 0,
-        week: 0,
-        types: {}
-      };
+      return { total: 0, today: 0, week: 0, types: {} };
     }
 
     try {
@@ -204,7 +212,7 @@ export const useDashboard = (timeRange = '7d', autoRefresh = true, refreshInterv
       const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
       const summary = recentActivity.reduce((acc, activity) => {
-        const activityDate = new Date(activity.createdAt);
+        const activityDate = new Date(activity.timestamp || activity.createdAt);
         
         acc.total++;
         
@@ -220,30 +228,16 @@ export const useDashboard = (timeRange = '7d', autoRefresh = true, refreshInterv
         acc.types[type] = (acc.types[type] || 0) + 1;
         
         return acc;
-      }, {
-        total: 0,
-        today: 0,
-        week: 0,
-        types: {}
-      });
+      }, { total: 0, today: 0, week: 0, types: {} });
 
-      logger.debug('Activity summary calculated', summary);
       return summary;
-
     } catch (error) {
-      logger.error('Activity summary calculation failed', {
-        error: error.message
-      });
-      return {
-        total: 0,
-        today: 0,
-        week: 0,
-        types: {}
-      };
+      logger.error('Activity summary calculation failed', { error: error.message });
+      return { total: 0, today: 0, week: 0, types: {} };
     }
   }, [recentActivity, logger]);
 
-  // Return hook interface
+  // Return stable interface
   return {
     // Data
     dashboardData,
@@ -252,20 +246,20 @@ export const useDashboard = (timeRange = '7d', autoRefresh = true, refreshInterv
     performanceMetrics,
     
     // State
-    loading,
-    error,
-    hasData,
+    loading: derivedState.loading,
+    error: derivedState.error,
+    hasData: derivedState.hasData,
     
     // Actions
     refreshData,
     
     // Computed values
-    performanceScore: calculatePerformanceScore(),
-    activitySummary: getActivitySummary(),
+    performanceScore,
+    activitySummary,
     
     // Utilities
     isStale: isDataStale(),
-    lastRefresh: dashboardData?.timestamp ? new Date(dashboardData.timestamp) : null,
+    lastRefresh: lastUpdated ? new Date(lastUpdated) : null,
     
     // Debug info
     debugInfo: {

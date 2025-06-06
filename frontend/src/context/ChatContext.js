@@ -1,5 +1,5 @@
 // File: src/context/ChatContext.js
-import React, { createContext, useState, useEffect, useContext } from 'react';
+import React, { createContext, useState, useEffect, useContext, useCallback, useMemo } from 'react';
 import { AuthContext } from './AuthContext';
 
 const ChatContext = createContext();
@@ -23,6 +23,65 @@ const ChatProvider = ({ children }) => {
 
   const { user, socket } = useContext(AuthContext);
 
+  // Stable mock conversations generator
+  const generateMockConversations = useCallback((currentUser) => {
+    if (!currentUser) return [];
+
+    return [
+      {
+        id: 1,
+        participants: [
+          { id: currentUser.id, name: currentUser.name, avatar: null },
+          { id: 2, name: 'John Doe', avatar: null }
+        ],
+        lastMessage: {
+          id: 1,
+          content: 'Hey, I can help you with your React project!',
+          timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+          senderId: 2,
+          type: 'text'
+        },
+        unreadCount: 2,
+        type: 'direct',
+        createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+      },
+      {
+        id: 2,
+        participants: [
+          { id: currentUser.id, name: currentUser.name, avatar: null },
+          { id: 3, name: 'Sarah Smith', avatar: null }
+        ],
+        lastMessage: {
+          id: 2,
+          content: 'Perfect! I\'ll send you the designs shortly.',
+          timestamp: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
+          senderId: currentUser.id,
+          type: 'text'
+        },
+        unreadCount: 0,
+        type: 'direct',
+        createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString()
+      },
+      {
+        id: 3,
+        participants: [
+          { id: currentUser.id, name: currentUser.name, avatar: null },
+          { id: 4, name: 'Mike Johnson', avatar: null }
+        ],
+        lastMessage: {
+          id: 3,
+          content: 'Thanks for completing the task so quickly!',
+          timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+          senderId: 4,
+          type: 'text'
+        },
+        unreadCount: 1,
+        type: 'direct',
+        createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString()
+      }
+    ];
+  }, []);
+
   // Load conversations when user changes
   useEffect(() => {
     if (!user) {
@@ -31,66 +90,15 @@ const ChatProvider = ({ children }) => {
       return;
     }
 
+    let mounted = true;
     setLoading(true);
     
     // Simulate loading conversations
     const timer = setTimeout(() => {
-      try {
-        // Mock conversations data
-        const mockConversations = [
-          {
-            id: 1,
-            participants: [
-              { id: user.id, name: user.name, avatar: null },
-              { id: 2, name: 'John Doe', avatar: null }
-            ],
-            lastMessage: {
-              id: 1,
-              content: 'Hey, I can help you with your React project!',
-              timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-              senderId: 2,
-              type: 'text'
-            },
-            unreadCount: 2,
-            type: 'direct',
-            createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
-          },
-          {
-            id: 2,
-            participants: [
-              { id: user.id, name: user.name, avatar: null },
-              { id: 3, name: 'Sarah Smith', avatar: null }
-            ],
-            lastMessage: {
-              id: 2,
-              content: 'Perfect! I\'ll send you the designs shortly.',
-              timestamp: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
-              senderId: user.id,
-              type: 'text'
-            },
-            unreadCount: 0,
-            type: 'direct',
-            createdAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString()
-          },
-          {
-            id: 3,
-            participants: [
-              { id: user.id, name: user.name, avatar: null },
-              { id: 4, name: 'Mike Johnson', avatar: null }
-            ],
-            lastMessage: {
-              id: 3,
-              content: 'Thanks for completing the task so quickly!',
-              timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-              senderId: 4,
-              type: 'text'
-            },
-            unreadCount: 1,
-            type: 'direct',
-            createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString()
-          }
-        ];
+      if (!mounted) return;
 
+      try {
+        const mockConversations = generateMockConversations(user);
         setConversations(mockConversations);
         
         // Calculate total unread count
@@ -100,16 +108,23 @@ const ChatProvider = ({ children }) => {
         setError(null);
       } catch (error) {
         console.error('Failed to load conversations:', error);
-        setError('Failed to load conversations');
+        if (mounted) {
+          setError('Failed to load conversations');
+        }
       } finally {
-        setLoading(false);
+        if (mounted) {
+          setLoading(false);
+        }
       }
     }, 600);
 
-    return () => clearTimeout(timer);
-  }, [user?.id]); // Only depend on user ID
+    return () => {
+      mounted = false;
+      clearTimeout(timer);
+    };
+  }, [user?.id, generateMockConversations]);
 
-  // Setup socket listeners - separate effect
+  // Setup socket listeners - separate effect to prevent loops
   useEffect(() => {
     if (!socket || !user) return;
 
@@ -159,7 +174,7 @@ const ChatProvider = ({ children }) => {
   }, [socket, user?.id, activeConversation?.id]);
 
   // Load messages for a conversation
-  const loadMessages = async (conversationId) => {
+  const loadMessages = useCallback(async (conversationId) => {
     try {
       setLoading(true);
       
@@ -218,14 +233,17 @@ const ChatProvider = ({ children }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user]);
 
-  // Send a message
-  const sendMessage = async (conversationId, content, type = 'text') => {
+  // Send a message - FIXED SCOPING ISSUE
+  const sendMessage = useCallback(async (conversationId, content, type = 'text') => {
     if (!user) return;
 
+    // Declare newMessage outside try-catch block to fix scoping issue
+    let newMessage = null;
+
     try {
-      const newMessage = {
+      newMessage = {
         id: Date.now(),
         conversationId,
         content,
@@ -268,21 +286,23 @@ const ChatProvider = ({ children }) => {
     } catch (error) {
       console.error('Failed to send message:', error);
       
-      // Update message status to failed
-      setMessages(prev => 
-        prev.map(msg => 
-          msg.id === newMessage.id 
-            ? { ...msg, status: 'failed' }
-            : msg
-        )
-      );
+      // Update message status to failed - newMessage is now accessible
+      if (newMessage) {
+        setMessages(prev => 
+          prev.map(msg => 
+            msg.id === newMessage.id 
+              ? { ...msg, status: 'failed' }
+              : msg
+          )
+        );
+      }
       
       throw new Error('Failed to send message');
     }
-  };
+  }, [user, socket]);
 
   // Create new conversation
-  const createConversation = async (participantIds, initialMessage = null) => {
+  const createConversation = useCallback(async (participantIds, initialMessage = null) => {
     if (!user) return;
 
     try {
@@ -310,10 +330,10 @@ const ChatProvider = ({ children }) => {
       console.error('Failed to create conversation:', error);
       throw new Error('Failed to create conversation');
     }
-  };
+  }, [user, sendMessage]);
 
   // Mark conversation as read
-  const markConversationAsRead = (conversationId) => {
+  const markConversationAsRead = useCallback((conversationId) => {
     setConversations(prev => 
       prev.map(conv => {
         if (conv.id === conversationId && conv.unreadCount > 0) {
@@ -324,10 +344,10 @@ const ChatProvider = ({ children }) => {
         return conv;
       })
     );
-  };
+  }, []);
 
   // Start a chat with a user
-  const startChat = async (userId, userName, initialMessage = null) => {
+  const startChat = useCallback(async (userId, userName, initialMessage = null) => {
     try {
       // Check if conversation already exists
       const existingConv = conversations.find(conv => 
@@ -347,10 +367,10 @@ const ChatProvider = ({ children }) => {
       console.error('Failed to start chat:', error);
       throw new Error('Failed to start chat');
     }
-  };
+  }, [conversations, loadMessages, createConversation]);
 
   // Send typing indicator
-  const sendTypingIndicator = (conversationId) => {
+  const sendTypingIndicator = useCallback((conversationId) => {
     if (socket && user) {
       socket.emit('typing', {
         conversationId,
@@ -358,10 +378,10 @@ const ChatProvider = ({ children }) => {
         userName: user.name
       });
     }
-  };
+  }, [socket, user]);
 
   // Delete conversation
-  const deleteConversation = async (conversationId) => {
+  const deleteConversation = useCallback(async (conversationId) => {
     try {
       setConversations(prev => prev.filter(conv => conv.id !== conversationId));
       
@@ -373,9 +393,10 @@ const ChatProvider = ({ children }) => {
       console.error('Failed to delete conversation:', error);
       throw new Error('Failed to delete conversation');
     }
-  };
+  }, [activeConversation]);
 
-  const value = {
+  // Memoized context value to prevent unnecessary re-renders
+  const contextValue = useMemo(() => ({
     conversations,
     activeConversation,
     messages,
@@ -390,10 +411,24 @@ const ChatProvider = ({ children }) => {
     sendTypingIndicator,
     deleteConversation,
     markConversationAsRead
-  };
+  }), [
+    conversations,
+    activeConversation,
+    messages,
+    unreadCount,
+    loading,
+    error,
+    loadMessages,
+    sendMessage,
+    createConversation,
+    startChat,
+    sendTypingIndicator,
+    deleteConversation,
+    markConversationAsRead
+  ]);
 
   return (
-    <ChatContext.Provider value={value}>
+    <ChatContext.Provider value={contextValue}>
       {children}
     </ChatContext.Provider>
   );

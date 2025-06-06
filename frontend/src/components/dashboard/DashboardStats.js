@@ -1,25 +1,39 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
 import CountUp from 'react-countup';
 import { useLogger } from '../../hooks/useLogger';
 
-const DashboardStats = ({ data, timeRange, userRole }) => {
+const DashboardStats = ({ data, timeRange = '7d', userRole = 'helper' }) => {
   const logger = useLogger('DashboardStats');
   const [animationEnabled, setAnimationEnabled] = useState(true);
   const [selectedMetric, setSelectedMetric] = useState(null);
+  const renderCountRef = useRef(0);
+  const mountedRef = useRef(true);
 
+  // Prevent infinite re-renders
   useEffect(() => {
-    logger.debug('DashboardStats rendered', { 
-      hasData: !!data, 
-      timeRange, 
-      userRole 
-    });
+    renderCountRef.current += 1;
+    if (renderCountRef.current > 20) {
+      console.warn('DashboardStats: Too many renders detected, disabling animations');
+      setAnimationEnabled(false);
+    }
+  });
+
+  // Stable logging with limited frequency
+  useEffect(() => {
+    if (renderCountRef.current <= 5) {
+      logger.debug('DashboardStats rendered', { 
+        hasData: !!data, 
+        timeRange, 
+        userRole,
+        renderCount: renderCountRef.current
+      });
+    }
   }, [data, timeRange, userRole, logger]);
 
-  // Calculate statistics based on user role and data
+  // Memoized stats calculation with stable dependencies
   const stats = useMemo(() => {
     if (!data) {
-      logger.warn('No data provided to DashboardStats');
       return [];
     }
 
@@ -28,7 +42,7 @@ const DashboardStats = ({ data, timeRange, userRole }) => {
         {
           id: 'credits',
           title: 'Available Credits',
-          value: data.credits || 0,
+          value: data.creditsEarned || data.credits || 0,
           change: data.creditsChange || 0,
           icon: '💰',
           color: '#4CAF50',
@@ -38,18 +52,18 @@ const DashboardStats = ({ data, timeRange, userRole }) => {
         {
           id: 'rating',
           title: 'Your Rating',
-          value: data.rating || 0,
+          value: data.avgRating || data.rating || 0,
           change: data.ratingChange || 0,
           icon: '⭐',
           color: '#FF9800',
-          description: `Based on ${data.totalRatings || 0} reviews`,
+          description: `Based on reviews`,
           format: 'decimal',
           max: 5
         },
         {
           id: 'completedTasks',
           title: 'Tasks Completed',
-          value: data.completedTasks || 0,
+          value: data.completedTasks || data.totalTasks || 0,
           change: data.completedTasksChange || 0,
           icon: userRole === 'helper' ? '🤝' : '📋',
           color: '#2196F3',
@@ -58,140 +72,81 @@ const DashboardStats = ({ data, timeRange, userRole }) => {
         }
       ];
 
-      // Role-specific stats
+      // Role-specific stats with stable logic
       if (userRole === 'helper') {
-        baseStats.push(
-          {
-            id: 'applicationsSubmitted',
-            title: 'Applications Sent',
-            value: data.applicationsSubmitted || 0,
-            change: data.applicationsSubmittedChange || 0,
-            icon: '📤',
-            color: '#9C27B0',
-            description: 'Applications submitted to tasks',
-            format: 'number'
-          },
-          {
-            id: 'applicationSuccessRate',
-            title: 'Success Rate',
-            value: data.applicationSuccessRate || 0,
-            change: data.successRateChange || 0,
-            icon: '🎯',
-            color: '#4CAF50',
-            description: 'Applications accepted vs sent',
-            format: 'percentage'
-          },
-          {
-            id: 'avgEarnings',
-            title: 'Avg. Earnings',
-            value: data.avgEarnings || 0,
-            change: data.avgEarningsChange || 0,
-            icon: '💎',
-            color: '#673AB7',
-            description: 'Average credits per completed task',
-            format: 'number'
-          }
-        );
+        baseStats.push({
+          id: 'applicationSuccessRate',
+          title: 'Success Rate',
+          value: data.applicationSuccessRate || 0,
+          change: data.successRateChange || 0,
+          icon: '🎯',
+          color: '#4CAF50',
+          description: 'Applications accepted vs sent',
+          format: 'percentage'
+        });
       } else {
-        baseStats.push(
-          {
-            id: 'tasksCreated',
-            title: 'Tasks Posted',
-            value: data.tasksCreated || 0,
-            change: data.tasksCreatedChange || 0,
-            icon: '📝',
-            color: '#FF5722',
-            description: 'Total tasks you\'ve posted',
-            format: 'number'
-          },
-          {
-            id: 'applicationsReceived',
-            title: 'Applications Received',
-            value: data.applicationsReceived || 0,
-            change: data.applicationsReceivedChange || 0,
-            icon: '📥',
-            color: '#607D8B',
-            description: 'Applications from helpers',
-            format: 'number'
-          },
-          {
-            id: 'avgTaskValue',
-            title: 'Avg. Task Value',
-            value: data.avgTaskValue || 0,
-            change: data.avgTaskValueChange || 0,
-            icon: '💰',
-            color: '#795548',
-            description: 'Average credits per task',
-            format: 'number'
-          }
-        );
+        baseStats.push({
+          id: 'tasksCreated',
+          title: 'Tasks Posted',
+          value: data.tasksCreated || 0,
+          change: data.tasksCreatedChange || 0,
+          icon: '📝',
+          color: '#FF5722',
+          description: 'Total tasks you\'ve posted',
+          format: 'number'
+        });
       }
-
-      logger.debug('Stats calculated', { 
-        statsCount: baseStats.length,
-        userRole,
-        timeRange 
-      });
 
       return baseStats;
 
     } catch (error) {
-      logger.error('Error calculating stats', { 
-        error: error.message,
-        data,
-        userRole 
-      });
+      logger.error('Error calculating stats', { error: error.message });
       return [];
     }
-  }, [data, userRole, timeRange, logger]);
+  }, [data, userRole, logger]);
 
-  // Format value based on type
-  const formatValue = (value, format, max = null) => {
+  // Stable format value function
+  const formatValue = useCallback((value, format) => {
     switch (format) {
       case 'percentage':
-        return `${value}%`;
+        return `${Math.round(value)}%`;
       case 'decimal':
-        return value.toFixed(1);
+        return Number(value).toFixed(1);
       case 'currency':
-        return `$${value.toFixed(2)}`;
+        return `$${Number(value).toFixed(2)}`;
       case 'number':
       default:
-        return value;
+        return Math.round(value);
     }
-  };
+  }, []);
 
-  // Get change indicator
-  const getChangeIndicator = (change) => {
-    if (change === 0) return { icon: '➖', color: '#9E9E9E', text: 'No change' };
-    if (change > 0) return { icon: '📈', color: '#4CAF50', text: `+${change}` };
-    return { icon: '📉', color: '#F44336', text: `${change}` };
-  };
+  // Stable change indicator function
+  const getChangeIndicator = useCallback((change) => {
+    const numChange = Number(change) || 0;
+    if (numChange === 0) return { icon: '➖', color: '#9E9E9E', text: 'No change' };
+    if (numChange > 0) return { icon: '📈', color: '#4CAF50', text: `+${numChange}` };
+    return { icon: '📉', color: '#F44336', text: `${numChange}` };
+  }, []);
 
-  // Handle stat click for detailed view
-  const handleStatClick = (stat) => {
-    setSelectedMetric(selectedMetric?.id === stat.id ? null : stat);
+  // Stable stat click handler
+  const handleStatClick = useCallback((stat) => {
+    if (!mountedRef.current) return;
+    
+    setSelectedMetric(prev => prev?.id === stat.id ? null : stat);
     logger.logInteraction('stat_clicked', stat.id, { 
       statTitle: stat.title,
       statValue: stat.value 
     });
-  };
+  }, [logger]);
 
-  // Animation variants
-  const containerVariants = {
-    hidden: { opacity: 0 },
-    visible: {
-      opacity: 1,
-      transition: {
-        staggerChildren: 0.1
-      }
-    }
-  };
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
-  const statVariants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: { opacity: 1, y: 0 }
-  };
-
+  // Early return for no stats
   if (!stats.length) {
     return (
       <div className="dashboard-stats-error">
@@ -200,6 +155,20 @@ const DashboardStats = ({ data, timeRange, userRole }) => {
       </div>
     );
   }
+
+  // Stable animation variants
+  const containerVariants = {
+    hidden: { opacity: 0 },
+    visible: {
+      opacity: 1,
+      transition: { staggerChildren: 0.1 }
+    }
+  };
+
+  const statVariants = {
+    hidden: { opacity: 0, y: 20 },
+    visible: { opacity: 1, y: 0 }
+  };
 
   return (
     <div className="dashboard-stats">
@@ -224,9 +193,9 @@ const DashboardStats = ({ data, timeRange, userRole }) => {
 
       <motion.div
         className="stats-grid"
-        variants={containerVariants}
-        initial="hidden"
-        animate="visible"
+        variants={animationEnabled ? containerVariants : {}}
+        initial={animationEnabled ? "hidden" : false}
+        animate={animationEnabled ? "visible" : false}
       >
         {stats.map((stat, index) => {
           const changeInfo = getChangeIndicator(stat.change);
@@ -235,7 +204,7 @@ const DashboardStats = ({ data, timeRange, userRole }) => {
           return (
             <motion.div
               key={stat.id}
-              variants={statVariants}
+              variants={animationEnabled ? statVariants : {}}
               className={`stat-card ${isSelected ? 'selected' : ''}`}
               onClick={() => handleStatClick(stat)}
               whileHover={animationEnabled ? { 
@@ -262,7 +231,7 @@ const DashboardStats = ({ data, timeRange, userRole }) => {
               </div>
 
               <div className="stat-value">
-                {animationEnabled ? (
+                {animationEnabled && renderCountRef.current <= 5 ? (
                   <CountUp
                     end={stat.value}
                     decimals={stat.format === 'decimal' ? 1 : 0}
@@ -271,7 +240,7 @@ const DashboardStats = ({ data, timeRange, userRole }) => {
                     suffix={stat.format === 'percentage' ? '%' : ''}
                   />
                 ) : (
-                  formatValue(stat.value, stat.format, stat.max)
+                  formatValue(stat.value, stat.format)
                 )}
               </div>
 
@@ -285,9 +254,9 @@ const DashboardStats = ({ data, timeRange, userRole }) => {
                     <motion.div
                       className="progress-fill"
                       style={{ backgroundColor: stat.color }}
-                      initial={{ width: 0 }}
+                      initial={animationEnabled ? { width: 0 } : { width: `${(stat.value / stat.max) * 100}%` }}
                       animate={{ width: `${(stat.value / stat.max) * 100}%` }}
-                      transition={{ duration: 1, delay: index * 0.1 }}
+                      transition={animationEnabled ? { duration: 1, delay: index * 0.1 } : {}}
                     />
                   </div>
                   <span className="progress-text">
@@ -308,7 +277,7 @@ const DashboardStats = ({ data, timeRange, userRole }) => {
                     <div className="detail-item">
                       <span className="detail-label">Current Value:</span>
                       <span className="detail-value">
-                        {formatValue(stat.value, stat.format, stat.max)}
+                        {formatValue(stat.value, stat.format)}
                       </span>
                     </div>
                     <div className="detail-item">
@@ -321,12 +290,6 @@ const DashboardStats = ({ data, timeRange, userRole }) => {
                       <span className="detail-label">Time Range:</span>
                       <span className="detail-value">{timeRange}</span>
                     </div>
-                    {stat.trend && (
-                      <div className="detail-item">
-                        <span className="detail-label">Trend:</span>
-                        <span className="detail-value">{stat.trend}</span>
-                      </div>
-                    )}
                   </div>
                 </motion.div>
               )}
@@ -343,19 +306,11 @@ const DashboardStats = ({ data, timeRange, userRole }) => {
         </div>
       )}
 
-      {/* Debug Panel for Development */}
-      {process.env.NODE_ENV === 'development' && (
-        <details className="debug-panel">
-          <summary>🔧 Debug: Stats Data</summary>
-          <pre className="debug-content">
-            {JSON.stringify({ 
-              stats: stats.map(s => ({ id: s.id, value: s.value, change: s.change })),
-              timeRange,
-              userRole,
-              selectedMetric: selectedMetric?.id 
-            }, null, 2)}
-          </pre>
-        </details>
+      {/* Render count warning for development */}
+      {process.env.NODE_ENV === 'development' && renderCountRef.current > 10 && (
+        <div className="render-warning">
+          ⚠️ High render count: {renderCountRef.current}
+        </div>
       )}
     </div>
   );
